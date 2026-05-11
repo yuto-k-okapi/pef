@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic UI",
+    "Meiryo", sans-serif;
+  background: #f5f5f7;
+  color: #1d1d1f;
+}
+
+/* Allow text input where it's actually meaningful (e.g. rename fields, file picker) */
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Eliminate iOS's 350ms tap-delay so palm contact on UI controls doesn't
+ * suppress concurrent Apple Pencil pointer events on the canvas. */
+button,
+label,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
