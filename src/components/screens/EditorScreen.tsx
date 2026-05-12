@@ -43,28 +43,35 @@ export function EditorScreen({ pdfId, onBack }: Props) {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      const record = await getPdf(pdfId);
-      if (!record || cancelled) {
-        if (!cancelled) setLoadError('PDFが見つかりません');
-        return;
+      try {
+        const record = await getPdf(pdfId);
+        if (!record || cancelled) {
+          if (!cancelled) setLoadError('PDFが見つかりません');
+          return;
+        }
+        const annotations = await listAnnotations(pdfId);
+        const strokesByPage: Record<number, Stroke[]> = {};
+        for (const a of annotations) strokesByPage[a.pageNum] = a.strokes;
+        if (cancelled) return;
+
+        // pdf-lib/pdfjs may detach the buffer; clone for both export and render
+        pdfBytesRef.current = record.bytes.slice(0);
+        const doc = await loadPDF(record.bytes.slice(0));
+        if (cancelled) return;
+
+        cssWidthByPageRef.current = {};
+        useDrawingStore.getState().hydrateFromIdb(pdfId, strokesByPage);
+        setPdf(doc);
+        setPageCount(doc.numPages);
+        setPageNum(1);
+        setDisplayName(record.displayName);
+        setOriginalFilename(record.originalFilename);
+      } catch (err) {
+        if (cancelled) return;
+        const msg = (err as Error).message || String(err);
+        setLoadError(`PDF読み込み失敗: ${msg}`);
+        console.error('PDF load failed', err);
       }
-      const annotations = await listAnnotations(pdfId);
-      const strokesByPage: Record<number, Stroke[]> = {};
-      for (const a of annotations) strokesByPage[a.pageNum] = a.strokes;
-      if (cancelled) return;
-
-      // pdf-lib/pdfjs may detach the buffer; clone for both export and render
-      pdfBytesRef.current = record.bytes.slice(0);
-      const doc = await loadPDF(record.bytes.slice(0));
-      if (cancelled) return;
-
-      cssWidthByPageRef.current = {};
-      useDrawingStore.getState().hydrateFromIdb(pdfId, strokesByPage);
-      setPdf(doc);
-      setPageCount(doc.numPages);
-      setPageNum(1);
-      setDisplayName(record.displayName);
-      setOriginalFilename(record.originalFilename);
     }
     void load();
     return () => {
@@ -77,18 +84,25 @@ export function EditorScreen({ pdfId, onBack }: Props) {
   useEffect(() => {
     let cancelled = false;
     async function render() {
-      if (!pdf || !pdfCanvasRef.current || !containerRef.current) return;
-      const page = await pdf.getPage(pageNum);
-      if (cancelled) return;
-      const { clientWidth, clientHeight } = containerRef.current;
-      const baseViewport = page.getViewport({ scale: 1 });
-      const widthByH = (clientHeight * baseViewport.width) / baseViewport.height;
-      const cssWidth = Math.min(clientWidth, widthByH);
-      const cssHeight = (cssWidth * baseViewport.height) / baseViewport.width;
-      await renderPageToCanvas(page, pdfCanvasRef.current, cssWidth);
-      if (cancelled) return;
-      cssWidthByPageRef.current[pageNum] = cssWidth;
-      setPageSize({ width: cssWidth, height: cssHeight });
+      try {
+        if (!pdf || !pdfCanvasRef.current || !containerRef.current) return;
+        const page = await pdf.getPage(pageNum);
+        if (cancelled) return;
+        const { clientWidth, clientHeight } = containerRef.current;
+        const baseViewport = page.getViewport({ scale: 1 });
+        const widthByH = (clientHeight * baseViewport.width) / baseViewport.height;
+        const cssWidth = Math.min(clientWidth, widthByH);
+        const cssHeight = (cssWidth * baseViewport.height) / baseViewport.width;
+        await renderPageToCanvas(page, pdfCanvasRef.current, cssWidth);
+        if (cancelled) return;
+        cssWidthByPageRef.current[pageNum] = cssWidth;
+        setPageSize({ width: cssWidth, height: cssHeight });
+      } catch (err) {
+        if (cancelled) return;
+        const msg = (err as Error).message || String(err);
+        console.error('page render failed', err);
+        setLoadError(`ページ描画失敗 (p.${pageNum}): ${msg}`);
+      }
     }
     void render();
     return () => {
@@ -144,7 +158,10 @@ export function EditorScreen({ pdfId, onBack }: Props) {
 
   return (
     <div className="h-full flex flex-col relative">
-      <header className="flex items-center gap-3 px-3 py-2 bg-white border-b border-gray-200">
+      <header
+        className="flex items-center gap-3 px-3 py-2 bg-white border-b border-gray-200"
+        style={{ paddingTop: 'max(env(safe-area-inset-top), 0.5rem)' }}
+      >
         <button
           onClick={onBack}
           className="px-3 py-1 rounded bg-gray-100 text-sm"

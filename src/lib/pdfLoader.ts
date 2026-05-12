@@ -16,7 +16,12 @@ export async function loadPDF(bytes: ArrayBuffer): Promise<PDFDocumentProxy> {
     cMapPacked: true,
     standardFontDataUrl: new URL('standard_fonts/', baseHref).href,
     verbosity: 1, // WARNINGS — surfaces font-substitution and missing-glyph diagnostics in console
-  }).promise;
+    // Route cmap/font fetches through the main thread instead of the worker.
+    // On iOS Safari the service worker doesn't intercept worker-thread
+    // requests, so without this offline cmap/font loads fail even though the
+    // assets are precached.
+    useWorkerFetch: false,
+  } as Parameters<typeof pdfjsLib.getDocument>[0]).promise;
 }
 
 export async function renderPageToCanvas(
