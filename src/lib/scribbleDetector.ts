@@ -1,14 +1,6 @@
 import type { Point, Stroke } from '../types/drawing';
+import type { ScribbleThresholds } from '../store/useSettingsStore';
 
-// Tuned from real-stroke metrics: a normal complex character (n=69) had
-// rev=9 and compactness in the ~2 range. We raise both bars so only clearly
-// scribbled gestures trigger — a real 「ぐちゃぐちゃ」 has rev≥12 and
-// compactness≥3.5.
-const MIN_POINTS = 12;
-const MIN_PATH_LENGTH = 120;
-const MIN_BBOX_DIAGONAL = 30;
-const MIN_COMPACTNESS = 3.5;
-const MIN_REVERSALS = 12;
 const REVERSAL_STRIDE_DIST = 6;
 
 export interface ScribbleMetrics {
@@ -22,8 +14,8 @@ export interface ScribbleMetrics {
 
 function countDistanceBasedReversals(pts: Point[]): number {
   // Sample-rate independent: accumulate displacement until it covers
-  // REVERSAL_STRIDE_DIST, then compare its direction against the previous
-  // accumulated segment. Counts a reversal when dot product is negative.
+  // REVERSAL_STRIDE_DIST, then compare against the previous accumulated
+  // direction. Counts a reversal when the dot product is negative (>90° change).
   let reversals = 0;
   let lastVx = 0;
   let lastVy = 0;
@@ -50,7 +42,10 @@ function countDistanceBasedReversals(pts: Point[]): number {
   return reversals;
 }
 
-export function analyzeStroke(stroke: Stroke): ScribbleMetrics {
+export function analyzeStroke(
+  stroke: Stroke,
+  thresholds: ScribbleThresholds | null,
+): ScribbleMetrics {
   const pts = stroke.points;
   let pathLength = 0;
   let minX = Infinity;
@@ -73,12 +68,13 @@ export function analyzeStroke(stroke: Stroke): ScribbleMetrics {
   const compactness = bboxDiagonal > 0 ? pathLength / bboxDiagonal : 0;
   const reversals = countDistanceBasedReversals(pts);
 
-  const ok =
-    pts.length >= MIN_POINTS &&
-    pathLength >= MIN_PATH_LENGTH &&
-    bboxDiagonal >= MIN_BBOX_DIAGONAL &&
-    compactness >= MIN_COMPACTNESS &&
-    reversals >= MIN_REVERSALS;
+  const isScribble =
+    thresholds !== null &&
+    pts.length >= thresholds.minPoints &&
+    pathLength >= thresholds.minPathLength &&
+    bboxDiagonal >= thresholds.minBboxDiagonal &&
+    compactness >= thresholds.minCompactness &&
+    reversals >= thresholds.minReversals;
 
   return {
     points: pts.length,
@@ -86,10 +82,6 @@ export function analyzeStroke(stroke: Stroke): ScribbleMetrics {
     bboxDiagonal,
     compactness,
     reversals,
-    isScribble: ok,
+    isScribble,
   };
-}
-
-export function isScribble(stroke: Stroke): boolean {
-  return analyzeStroke(stroke).isScribble;
 }

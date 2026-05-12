@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react';
 import { useDrawingStore } from '../store/useDrawingStore';
-import { COLORS, WIDTH_PX } from '../types/drawing';
+import {
+  thresholdsFor,
+  useSettingsStore,
+  widthValue,
+} from '../store/useSettingsStore';
+import { COLORS } from '../types/drawing';
 import type { Point, Stroke } from '../types/drawing';
 import {
   applyLivePenStyle,
@@ -23,7 +28,6 @@ interface Props {
 }
 
 const EMPTY: Stroke[] = [];
-const ERASER_RADIUS = 5;
 
 type SourceTag = 'pointer' | 'touch' | null;
 
@@ -103,10 +107,11 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
 
     // ---- shared helpers ----
     const eraseAt = (pt: Point) => {
+      const r = useSettingsStore.getState().eraserRadius;
       const cur = useDrawingStore.getState().strokesByPage[page] ?? EMPTY;
       const indices: number[] = [];
       for (let i = 0; i < cur.length; i++) {
-        if (pointNearStroke(pt.x, pt.y, cur[i], ERASER_RADIUS)) indices.push(i);
+        if (pointNearStroke(pt.x, pt.y, cur[i], r)) indices.push(i);
       }
       if (indices.length > 0) {
         useDrawingStore.getState().removeStrokes(page, indices);
@@ -117,11 +122,12 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       clearCanvas(live);
       const ctx = live.getContext('2d');
       if (!ctx) return;
+      const r = useSettingsStore.getState().eraserRadius;
       ctx.fillStyle = 'rgba(255,255,255,0.55)';
       ctx.strokeStyle = 'rgba(0,0,0,0.55)';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(pt.x, pt.y, ERASER_RADIUS, 0, Math.PI * 2);
+      ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     };
@@ -145,6 +151,7 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
 
     const beginStroke = (pt: Point, source: SourceTag) => {
       const { tool, color, width } = useDrawingStore.getState();
+      const settings = useSettingsStore.getState();
       sourceRef.current = source;
       if (tool === 'eraser') {
         liveStrokeRef.current = {
@@ -158,7 +165,8 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
           points: [pt],
           color: COLORS[color],
           kind: tool, // 'pen' or 'pencil'
-          width: WIDTH_PX[width],
+          width: widthValue(width, settings),
+          alpha: tool === 'pencil' ? settings.pencilAlpha : 1,
         };
       }
     };
@@ -190,7 +198,8 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       }
 
       // pen / pencil
-      const m = analyzeStroke(liveStroke);
+      const sensitivity = useSettingsStore.getState().scribbleSensitivity;
+      const m = analyzeStroke(liveStroke, thresholdsFor(sensitivity));
       useLogStore
         .getState()
         .add(

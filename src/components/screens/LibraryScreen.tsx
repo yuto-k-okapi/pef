@@ -10,6 +10,7 @@ import { TAG_LABEL, TAG_NAME, TAG_ORDER } from '../../types/library';
 
 interface Props {
   onOpen: (id: string) => void;
+  onOpenSettings: () => void;
 }
 
 const TAG_STYLE: Record<PdfRecord['tag'], string> = {
@@ -24,7 +25,7 @@ interface ImportProgress {
   filename: string;
 }
 
-export function LibraryScreen({ onOpen }: Props) {
+export function LibraryScreen({ onOpen, onOpenSettings }: Props) {
   const [pdfs, setPdfs] = useState<PdfRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<ImportProgress | null>(null);
@@ -117,6 +118,13 @@ export function LibraryScreen({ onOpen }: Props) {
         style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)' }}
       >
         <h1 className="text-lg font-bold flex-1">PDF添削</h1>
+        <button
+          onClick={onOpenSettings}
+          aria-label="設定"
+          className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-lg"
+        >
+          ⚙
+        </button>
         <label
           className={`px-4 py-2 rounded-lg text-sm whitespace-nowrap ${
             importing

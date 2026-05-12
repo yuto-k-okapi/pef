@@ -1,10 +1,6 @@
 import { useDrawingStore } from '../store/useDrawingStore';
-import {
-  COLORS,
-  COLOR_ORDER,
-  WIDTH_ORDER,
-  WIDTH_PX,
-} from '../types/drawing';
+import { useSettingsStore, widthValue } from '../store/useSettingsStore';
+import { COLORS, COLOR_ORDER, WIDTH_ORDER } from '../types/drawing';
 
 export function Toolbar({ page }: { page: number }) {
   const tool = useDrawingStore((s) => s.tool);
@@ -15,6 +11,7 @@ export function Toolbar({ page }: { page: number }) {
   const setWidth = useDrawingStore((s) => s.setWidth);
   const undo = useDrawingStore((s) => s.undo);
   const undoDepth = useDrawingStore((s) => s.undoStackByPage[page]?.length ?? 0);
+  const settings = useSettingsStore();
 
   const isInk = tool === 'pen' || tool === 'pencil';
 
@@ -68,7 +65,7 @@ export function Toolbar({ page }: { page: number }) {
       {/* Width chips */}
       {WIDTH_ORDER.map((w) => {
         const active = width === w;
-        const dotSize = Math.max(4, WIDTH_PX[w] * 2.4);
+        const dotSize = Math.max(4, widthValue(w, settings) * 2.4);
         return (
           <button
             key={w}

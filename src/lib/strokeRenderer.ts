@@ -4,12 +4,18 @@ const DEFAULT_WIDTH = 2.4;
 // Pencil texture density: dots per CSS pixel along the path.
 const PENCIL_DOT_DENSITY = 1.6;
 const PENCIL_DOT_RADIUS_RATIO = 0.32;
-const PENCIL_DOT_ALPHA_MIN = 0.12;
-const PENCIL_DOT_ALPHA_RANGE = 0.22;
+const PENCIL_DOT_ALPHA_MIN = 0.18;
+const PENCIL_DOT_ALPHA_RANGE = 0.42;
 const PENCIL_JITTER_RATIO = 0.95;
+const DEFAULT_PENCIL_ALPHA = 0.55;
 
 function strokeWidth(stroke: Stroke): number {
   return stroke.width ?? DEFAULT_WIDTH;
+}
+
+function strokeAlpha(stroke: Stroke): number {
+  if (stroke.alpha !== undefined) return stroke.alpha;
+  return stroke.kind === 'pencil' ? DEFAULT_PENCIL_ALPHA : 1;
 }
 
 function midpoint(a: Point, b: Point): { x: number; y: number } {
@@ -28,6 +34,7 @@ function drawPencilSegment(
   p1: Point,
   w: number,
   seedBase: number,
+  alphaMult: number,
 ) {
   const dx = p1.x - p0.x;
   const dy = p1.y - p0.y;
@@ -44,7 +51,8 @@ function drawPencilSegment(
     const seed = seedBase * 1024 + i;
     const jitter = (hash(seed) - 0.5) * w * PENCIL_JITTER_RATIO;
     const alpha =
-      PENCIL_DOT_ALPHA_MIN + hash(seed + 0.5) * PENCIL_DOT_ALPHA_RANGE;
+      (PENCIL_DOT_ALPHA_MIN + hash(seed + 0.5) * PENCIL_DOT_ALPHA_RANGE) *
+      alphaMult;
     ctx.globalAlpha = alpha;
     ctx.beginPath();
     ctx.arc(
@@ -75,11 +83,12 @@ export function renderStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
     ctx.save();
     ctx.fillStyle = stroke.color;
     const w = strokeWidth(stroke);
+    const a = strokeAlpha(stroke) / DEFAULT_PENCIL_ALPHA; // 1.0 at default
     if (pts.length === 1) {
-      drawPencilSegment(ctx, pts[0], pts[0], w, 0);
+      drawPencilSegment(ctx, pts[0], pts[0], w, 0, a);
     } else {
       for (let i = 1; i < pts.length; i++) {
-        drawPencilSegment(ctx, pts[i - 1], pts[i], w, i);
+        drawPencilSegment(ctx, pts[i - 1], pts[i], w, i, a);
       }
     }
     ctx.restore();
@@ -172,6 +181,7 @@ export function drawIncrementalPencilSegment(
     pts[pts.length - 1],
     strokeWidth(stroke),
     pts.length - 1,
+    strokeAlpha(stroke) / DEFAULT_PENCIL_ALPHA,
   );
   ctx.restore();
 }
