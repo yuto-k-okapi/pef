@@ -5,6 +5,7 @@ import { PDFDocument } from 'pdf-lib';
 import {
   getPdf,
   listAnnotations,
+  shiftAnnotationsAfter,
   updatePdf,
   updatePdfBytes,
 } from '../../lib/idbStorage';
@@ -120,21 +121,35 @@ export function EditorScreen({ pdfId, onBack }: Props) {
     if (!pdfBytesRef.current || !pdf) return;
     try {
       const pdfDoc = await PDFDocument.load(pdfBytesRef.current.slice(0));
-      // Match the first page's size for the new blank note page
-      const first = pdfDoc.getPage(0);
-      const { width, height } = first.getSize();
-      pdfDoc.addPage([width, height]);
+      // Match the CURRENT page's size for the new blank note page
+      const curPdfLibPage = pdfDoc.getPage(pageNum - 1);
+      const { width, height } = curPdfLibPage.getSize();
+      // Insert at 0-indexed `pageNum` so the new page appears immediately
+      // after the current page (1-indexed pageNum+1).
+      pdfDoc.insertPage(pageNum, [width, height]);
       const newBytes = await pdfDoc.save();
       const arrayBuffer = new ArrayBuffer(newBytes.byteLength);
       new Uint8Array(arrayBuffer).set(newBytes);
       pdfBytesRef.current = arrayBuffer.slice(0);
       await updatePdfBytes(pdfId, arrayBuffer.slice(0));
 
+      // Shift any existing strokes on pages > pageNum up by one
+      await shiftAnnotationsAfter(pdfId, pageNum);
+      useDrawingStore.getState().shiftPagesAfter(pageNum);
+      // Also shift the per-page CSS width cache so the export still scales
+      // existing pages correctly.
+      const shiftedCss: Record<number, number> = {};
+      for (const [k, v] of Object.entries(cssWidthByPageRef.current)) {
+        const pk = Number(k);
+        shiftedCss[pk > pageNum ? pk + 1 : pk] = v;
+      }
+      cssWidthByPageRef.current = shiftedCss;
+
       // Re-load PDF.js to pick up the new page
       const newDoc = await loadPDF(arrayBuffer.slice(0));
       setPdf(newDoc);
       setPageCount(newDoc.numPages);
-      setPageNum(newDoc.numPages); // jump to the newly inserted page
+      setPageNum(pageNum + 1); // jump to the newly inserted blank page
     } catch (err) {
       console.error('insert note page failed', err);
       alert(`メモページ追加失敗: ${(err as Error).message}`);
@@ -251,9 +266,14 @@ export function EditorScreen({ pdfId, onBack }: Props) {
             className="relative"
             style={{
               touchAction: 'none',
-              transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
-              transformOrigin: '50% 50%',
-              willChange: 'transform',
+              // Avoid creating a GPU compositing layer when nothing is
+              // transformed — the extra layer adds perceptible drawing lag.
+              ...(zoom !== 1 || panX !== 0 || panY !== 0
+                ? {
+                    transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                    transformOrigin: '50% 50%',
+                  }
+                : {}),
             }}
           >
             <canvas

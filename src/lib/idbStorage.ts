@@ -53,6 +53,21 @@ export async function listAnnotations(pdfId: string): Promise<AnnotationRecord[]
   }));
 }
 
+export async function shiftAnnotationsAfter(
+  pdfId: string,
+  afterPage: number,
+): Promise<void> {
+  const m = annotationsByPdf.get(pdfId);
+  if (!m) return;
+  const keys = Array.from(m.keys()).sort((a, b) => b - a); // descending
+  for (const k of keys) {
+    if (k > afterPage) {
+      m.set(k + 1, m.get(k)!);
+      m.delete(k);
+    }
+  }
+}
+
 export async function setAnnotation(
   pdfId: string,
   pageNum: number,

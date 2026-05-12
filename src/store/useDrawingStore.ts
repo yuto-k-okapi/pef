@@ -36,6 +36,9 @@ interface DrawingState {
   addStroke: (page: number, stroke: Stroke) => void;
   removeStrokes: (page: number, indices: number[]) => void;
   undo: (page: number) => void;
+  /** Shift every stroke at pages > `afterPage` up by one slot (used when a
+   * new blank page is inserted immediately after the current page). */
+  shiftPagesAfter: (afterPage: number) => void;
 }
 
 function pushUndo(
@@ -117,6 +120,25 @@ export const useDrawingStore = create<DrawingState>((set) => ({
       return {
         strokesByPage: { ...s.strokesByPage, [page]: next },
         undoStackByPage: pushUndo(s.undoStackByPage, page, cur),
+        redrawCounter: s.redrawCounter + 1,
+      };
+    }),
+
+  shiftPagesAfter: (afterPage) =>
+    set((s) => {
+      const nextStrokes: Record<number, Stroke[]> = {};
+      for (const [k, v] of Object.entries(s.strokesByPage)) {
+        const pk = Number(k);
+        nextStrokes[pk > afterPage ? pk + 1 : pk] = v;
+      }
+      const nextUndo: Record<number, Stroke[][]> = {};
+      for (const [k, v] of Object.entries(s.undoStackByPage)) {
+        const pk = Number(k);
+        nextUndo[pk > afterPage ? pk + 1 : pk] = v;
+      }
+      return {
+        strokesByPage: nextStrokes,
+        undoStackByPage: nextUndo,
         redrawCounter: s.redrawCounter + 1,
       };
     }),

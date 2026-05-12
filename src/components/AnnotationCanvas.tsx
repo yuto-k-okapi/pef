@@ -3,9 +3,10 @@ import { useDrawingStore } from '../store/useDrawingStore';
 import { COLORS, WIDTH_PX } from '../types/drawing';
 import type { Point, Stroke } from '../types/drawing';
 import {
-  applyLiveStrokeStyle,
+  applyLivePenStyle,
   clearCanvas,
   drawCurveSegment,
+  drawIncrementalPencilSegment,
   drawLine,
   pointNearStroke,
   renderAllStrokes,
@@ -128,7 +129,11 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
     const drawIncremental = (stroke: Stroke) => {
       const ctx = live.getContext('2d');
       if (!ctx) return;
-      applyLiveStrokeStyle(ctx, stroke);
+      if (stroke.kind === 'pencil') {
+        drawIncrementalPencilSegment(ctx, stroke);
+        return;
+      }
+      applyLivePenStyle(ctx, stroke);
       const pts = stroke.points;
       const n = pts.length;
       if (n === 2) {
@@ -245,7 +250,16 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
     const onPointerMove = (e: PointerEvent) => {
       if (e.pointerType !== 'pen') return;
       if (sourceRef.current === 'pointer') {
-        continueStroke(pointerToPoint(e));
+        // Browsers coalesce rapid pointer events into one. getCoalescedEvents()
+        // gives us every intermediate sample so high-rate Pencils don't get
+        // down-sampled to display refresh rate → much smoother lines.
+        const events =
+          typeof e.getCoalescedEvents === 'function'
+            ? e.getCoalescedEvents()
+            : [e];
+        for (const ev of events) {
+          continueStroke(pointerToPoint(ev));
+        }
       } else if (sourceRef.current === null) {
         // Hover: show eraser cursor only
         if (useDrawingStore.getState().tool === 'eraser') {
