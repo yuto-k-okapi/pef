@@ -1,11 +1,11 @@
-import type { Stroke } from '../types/drawing';
+import type { Point, Stroke } from '../types/drawing';
 
-const MIN_POINTS = 6;
-const MIN_PATH_LENGTH = 60;
-const MIN_BBOX_DIAGONAL = 20;
-const MIN_COMPACTNESS = 1.8;
-const MIN_REVERSALS = 3;
-const REVERSAL_STRIDE = 3;
+const MIN_POINTS = 8;
+const MIN_PATH_LENGTH = 80;
+const MIN_BBOX_DIAGONAL = 25;
+const MIN_COMPACTNESS = 2.5;
+const MIN_REVERSALS = 4;
+const REVERSAL_STRIDE_DIST = 6; // accumulate direction over ≥6 CSS pixels before checking for reversal
 
 export interface ScribbleMetrics {
   points: number;
@@ -14,6 +14,36 @@ export interface ScribbleMetrics {
   compactness: number;
   reversals: number;
   isScribble: boolean;
+}
+
+function countDistanceBasedReversals(pts: Point[]): number {
+  // Sample-rate independent: accumulate displacement until it covers
+  // REVERSAL_STRIDE_DIST, then compare its direction against the previous
+  // accumulated segment. Counts a reversal when dot product is negative.
+  let reversals = 0;
+  let lastVx = 0;
+  let lastVy = 0;
+  let lastSet = false;
+  let accVx = 0;
+  let accVy = 0;
+  const strideSq = REVERSAL_STRIDE_DIST * REVERSAL_STRIDE_DIST;
+
+  for (let i = 1; i < pts.length; i++) {
+    accVx += pts[i].x - pts[i - 1].x;
+    accVy += pts[i].y - pts[i - 1].y;
+    if (accVx * accVx + accVy * accVy < strideSq) continue;
+
+    if (lastSet) {
+      const dot = accVx * lastVx + accVy * lastVy;
+      if (dot < 0) reversals++;
+    }
+    lastVx = accVx;
+    lastVy = accVy;
+    lastSet = true;
+    accVx = 0;
+    accVy = 0;
+  }
+  return reversals;
 }
 
 export function analyzeStroke(stroke: Stroke): ScribbleMetrics {
@@ -37,23 +67,7 @@ export function analyzeStroke(stroke: Stroke): ScribbleMetrics {
 
   const bboxDiagonal = pts.length > 0 ? Math.hypot(maxX - minX, maxY - minY) : 0;
   const compactness = bboxDiagonal > 0 ? pathLength / bboxDiagonal : 0;
-
-  // Direction reversals across STRIDE-sized windows (robust to per-sample jitter)
-  let reversals = 0;
-  let prevDx = 0;
-  let prevDy = 0;
-  let prevSet = false;
-  for (let i = REVERSAL_STRIDE; i < pts.length; i += REVERSAL_STRIDE) {
-    const dx = pts[i].x - pts[i - REVERSAL_STRIDE].x;
-    const dy = pts[i].y - pts[i - REVERSAL_STRIDE].y;
-    if (prevSet) {
-      const dot = dx * prevDx + dy * prevDy;
-      if (dot < 0) reversals++;
-    }
-    prevDx = dx;
-    prevDy = dy;
-    prevSet = true;
-  }
+  const reversals = countDistanceBasedReversals(pts);
 
   const ok =
     pts.length >= MIN_POINTS &&
