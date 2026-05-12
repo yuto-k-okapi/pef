@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { useDrawingStore } from '../store/useDrawingStore';
-import { COLORS } from '../types/drawing';
+import { COLORS, WIDTH_PX } from '../types/drawing';
 import type { Point, Stroke } from '../types/drawing';
 import {
+  applyLiveStrokeStyle,
   clearCanvas,
   drawCurveSegment,
   drawLine,
@@ -71,7 +72,10 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       c.height = Math.floor(cssHeight * dpr);
       c.style.width = `${cssWidth}px`;
       c.style.height = `${cssHeight}px`;
-      c.getContext('2d')?.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // desynchronized: true requests low-latency mode in Safari/Chrome,
+      // reducing apparent input-to-paint lag for the pen.
+      const ctx = c.getContext('2d', { desynchronized: true });
+      ctx?.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     if (persistentRef.current) {
       const cur = useDrawingStore.getState().strokesByPage[page] ?? EMPTY;
@@ -121,12 +125,11 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       ctx.stroke();
     };
 
-    const drawIncremental = (color: string, pts: Point[]) => {
+    const drawIncremental = (stroke: Stroke) => {
       const ctx = live.getContext('2d');
       if (!ctx) return;
-      ctx.strokeStyle = color;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+      applyLiveStrokeStyle(ctx, stroke);
+      const pts = stroke.points;
       const n = pts.length;
       if (n === 2) {
         drawLine(ctx, pts[0], pts[1]);
@@ -136,15 +139,22 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
     };
 
     const beginStroke = (pt: Point, source: SourceTag) => {
-      const { tool, color } = useDrawingStore.getState();
+      const { tool, color, width } = useDrawingStore.getState();
       sourceRef.current = source;
-      liveStrokeRef.current = {
-        points: [pt],
-        color: tool === 'pen' ? COLORS[color] : '__eraser__',
-      };
       if (tool === 'eraser') {
+        liveStrokeRef.current = {
+          points: [pt],
+          color: '__eraser__',
+        };
         eraseAt(pt);
         drawEraserCursor(pt);
+      } else {
+        liveStrokeRef.current = {
+          points: [pt],
+          color: COLORS[color],
+          kind: tool, // 'pen' or 'pencil'
+          width: WIDTH_PX[width],
+        };
       }
     };
 
@@ -153,11 +163,11 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       if (!liveStroke) return;
       liveStroke.points.push(pt);
       const tool = useDrawingStore.getState().tool;
-      if (tool === 'pen') {
-        drawIncremental(liveStroke.color, liveStroke.points);
-      } else if (tool === 'eraser') {
+      if (tool === 'eraser') {
         eraseAt(pt);
         drawEraserCursor(pt);
+      } else {
+        drawIncremental(liveStroke);
       }
     };
 
@@ -169,42 +179,44 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       if (!liveStroke) return;
 
       const tool = useDrawingStore.getState().tool;
-      if (tool === 'pen') {
-        const m = analyzeStroke(liveStroke);
-        useLogStore
-          .getState()
-          .add(
-            'warn',
-            `stroke n=${m.points} len=${m.pathLength.toFixed(0)} bbox=${m.bboxDiagonal.toFixed(0)} comp=${m.compactness.toFixed(2)} rev=${m.reversals} → ${m.isScribble ? 'SCRIBBLE' : 'ink'}`,
-          );
-
-        if (m.isScribble) {
-          const cur = useDrawingStore.getState().strokesByPage[page] ?? EMPTY;
-          const indices: number[] = [];
-          for (let i = 0; i < cur.length; i++) {
-            if (strokesIntersect(cur[i], liveStroke)) indices.push(i);
-          }
-          clearCanvas(live);
-          if (indices.length > 0) {
-            useDrawingStore.getState().removeStrokes(page, indices);
-          }
-          return;
-        }
-
-        // Paint to persistent first to avoid flash, then clear live.
-        if (persistentRef.current) {
-          const ctx = persistentRef.current.getContext('2d');
-          if (ctx) {
-            const dpr = window.devicePixelRatio || 1;
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-            renderStroke(ctx, liveStroke);
-          }
-        }
+      if (tool === 'eraser') {
         clearCanvas(live);
-        useDrawingStore.getState().addStroke(page, liveStroke);
-      } else {
-        clearCanvas(live);
+        return;
       }
+
+      // pen / pencil
+      const m = analyzeStroke(liveStroke);
+      useLogStore
+        .getState()
+        .add(
+          'warn',
+          `stroke n=${m.points} len=${m.pathLength.toFixed(0)} bbox=${m.bboxDiagonal.toFixed(0)} comp=${m.compactness.toFixed(2)} rev=${m.reversals} → ${m.isScribble ? 'SCRIBBLE' : 'ink'}`,
+        );
+
+      if (m.isScribble) {
+        const cur = useDrawingStore.getState().strokesByPage[page] ?? EMPTY;
+        const indices: number[] = [];
+        for (let i = 0; i < cur.length; i++) {
+          if (strokesIntersect(cur[i], liveStroke)) indices.push(i);
+        }
+        clearCanvas(live);
+        if (indices.length > 0) {
+          useDrawingStore.getState().removeStrokes(page, indices);
+        }
+        return;
+      }
+
+      // Paint to persistent first to avoid flash, then clear live.
+      if (persistentRef.current) {
+        const ctx = persistentRef.current.getContext('2d');
+        if (ctx) {
+          const dpr = window.devicePixelRatio || 1;
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          renderStroke(ctx, liveStroke);
+        }
+      }
+      clearCanvas(live);
+      useDrawingStore.getState().addStroke(page, liveStroke);
     };
 
     // ---- Pointer Events (mouse + most pens, hover support) ----
@@ -301,14 +313,16 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       const [a, b] = Array.from(fingersRef.current.values());
       const dist = Math.hypot(a.x - b.x, a.y - b.y);
       const factor = dist / p.initialDist;
-      const newZoom = Math.max(0.5, Math.min(5, p.initialZoom * factor));
+      const newZoom = Math.max(1, Math.min(5, p.initialZoom * factor));
       const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
       const dx = mid.x - p.initialMid.x;
       const dy = mid.y - p.initialMid.y;
       useDrawingStore.getState().setView({
         zoom: newZoom,
-        panX: p.initialPan.x + dx,
-        panY: p.initialPan.y + dy,
+        // At zoom = 1 the page fits; force pan back to origin so it can't
+        // drift off-screen via accumulated translate.
+        panX: newZoom === 1 ? 0 : p.initialPan.x + dx,
+        panY: newZoom === 1 ? 0 : p.initialPan.y + dy,
       });
     };
 

@@ -29,6 +29,15 @@ export async function updatePdf(
   pdfMap.set(id, { ...cur, ...patch, updatedAt: Date.now() });
 }
 
+export async function updatePdfBytes(
+  id: string,
+  bytes: ArrayBuffer,
+): Promise<void> {
+  const cur = pdfMap.get(id);
+  if (!cur) return;
+  pdfMap.set(id, { ...cur, bytes, updatedAt: Date.now() });
+}
+
 export async function deletePdf(id: string): Promise<void> {
   pdfMap.delete(id);
   annotationsByPdf.delete(id);

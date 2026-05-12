@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { loadPDF, renderPageToCanvas } from '../../lib/pdfLoader';
+import { PDFDocument } from 'pdf-lib';
 import {
   getPdf,
   listAnnotations,
   updatePdf,
+  updatePdfBytes,
 } from '../../lib/idbStorage';
 import {
   annotatedFilename,
@@ -114,6 +116,31 @@ export function EditorScreen({ pdfId, onBack }: Props) {
     };
   }, [pdf, pageNum]);
 
+  async function handleInsertNotePage() {
+    if (!pdfBytesRef.current || !pdf) return;
+    try {
+      const pdfDoc = await PDFDocument.load(pdfBytesRef.current.slice(0));
+      // Match the first page's size for the new blank note page
+      const first = pdfDoc.getPage(0);
+      const { width, height } = first.getSize();
+      pdfDoc.addPage([width, height]);
+      const newBytes = await pdfDoc.save();
+      const arrayBuffer = new ArrayBuffer(newBytes.byteLength);
+      new Uint8Array(arrayBuffer).set(newBytes);
+      pdfBytesRef.current = arrayBuffer.slice(0);
+      await updatePdfBytes(pdfId, arrayBuffer.slice(0));
+
+      // Re-load PDF.js to pick up the new page
+      const newDoc = await loadPDF(arrayBuffer.slice(0));
+      setPdf(newDoc);
+      setPageCount(newDoc.numPages);
+      setPageNum(newDoc.numPages); // jump to the newly inserted page
+    } catch (err) {
+      console.error('insert note page failed', err);
+      alert(`メモページ追加失敗: ${(err as Error).message}`);
+    }
+  }
+
   async function handleExport() {
     const bytes = pdfBytesRef.current;
     if (!bytes || exporting) return;
@@ -200,6 +227,13 @@ export function EditorScreen({ pdfId, onBack }: Props) {
             {zoom.toFixed(1)}× ↺
           </button>
         )}
+        <button
+          onClick={handleInsertNotePage}
+          className="px-2 py-1 rounded bg-gray-100 text-sm whitespace-nowrap"
+          title="末尾に空白メモページを追加"
+        >
+          + メモ
+        </button>
         <button
           onClick={handleExport}
           disabled={exporting}

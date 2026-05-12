@@ -1,10 +1,14 @@
 import type { Point, Stroke } from '../types/drawing';
+import { PENCIL_ALPHA } from '../types/drawing';
 
-const PEN_WIDTH = 2.4;
+const DEFAULT_WIDTH = 2.4;
 
-export function widthFromPressure(_pressure: number): number {
-  // Fixed pen width — pressure-sensitivity disabled by user preference.
-  return PEN_WIDTH;
+function strokeWidth(stroke: Stroke): number {
+  return stroke.width ?? DEFAULT_WIDTH;
+}
+
+function strokeAlpha(stroke: Stroke): number {
+  return stroke.kind === 'pencil' ? PENCIL_ALPHA : 1;
 }
 
 function midpoint(a: Point, b: Point): { x: number; y: number } {
@@ -24,50 +28,56 @@ export function renderStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
   const pts = stroke.points;
   if (pts.length === 0) return;
 
+  ctx.save();
   ctx.strokeStyle = stroke.color;
   ctx.fillStyle = stroke.color;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  ctx.lineWidth = strokeWidth(stroke);
+  ctx.globalAlpha = strokeAlpha(stroke);
 
   if (pts.length === 1) {
-    const p = pts[0];
     ctx.beginPath();
-    ctx.arc(p.x, p.y, widthFromPressure(p.pressure) / 2, 0, Math.PI * 2);
+    ctx.arc(pts[0].x, pts[0].y, ctx.lineWidth / 2, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
     return;
   }
 
   if (pts.length === 2) {
-    drawLine(ctx, pts[0], pts[1]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    ctx.lineTo(pts[1].x, pts[1].y);
+    ctx.stroke();
+    ctx.restore();
     return;
   }
 
-  // First half-segment: from pts[0] to midpoint(pts[0], pts[1])
-  const m01 = midpoint(pts[0], pts[1]);
-  ctx.lineWidth = widthFromPressure(pts[0].pressure);
+  // Single continuous path through midpoints (smooth at all sample rates)
   ctx.beginPath();
   ctx.moveTo(pts[0].x, pts[0].y);
-  ctx.lineTo(m01.x, m01.y);
-  ctx.stroke();
-
-  // Middle: quadratic curves through each interior point, midpoint to midpoint
   for (let i = 1; i < pts.length - 1; i++) {
-    drawCurveSegment(ctx, pts[i - 1], pts[i], pts[i + 1]);
+    const m = midpoint(pts[i], pts[i + 1]);
+    ctx.quadraticCurveTo(pts[i].x, pts[i].y, m.x, m.y);
   }
-
-  // Last half-segment: from midpoint(pts[n-2], pts[n-1]) to pts[n-1]
-  const last = pts[pts.length - 1];
-  const beforeLast = pts[pts.length - 2];
-  const mLast = midpoint(beforeLast, last);
-  ctx.lineWidth = widthFromPressure(last.pressure);
-  ctx.beginPath();
-  ctx.moveTo(mLast.x, mLast.y);
-  ctx.lineTo(last.x, last.y);
+  ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
   ctx.stroke();
+  ctx.restore();
+}
+
+/** Configure a 2D context for live-drawing the given stroke. */
+export function applyLiveStrokeStyle(
+  ctx: CanvasRenderingContext2D,
+  stroke: Stroke,
+) {
+  ctx.strokeStyle = stroke.color;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = strokeWidth(stroke);
+  ctx.globalAlpha = strokeAlpha(stroke);
 }
 
 export function drawLine(ctx: CanvasRenderingContext2D, p0: Point, p1: Point) {
-  ctx.lineWidth = widthFromPressure((p0.pressure + p1.pressure) / 2);
   ctx.beginPath();
   ctx.moveTo(p0.x, p0.y);
   ctx.lineTo(p1.x, p1.y);
@@ -82,7 +92,6 @@ export function drawCurveSegment(
 ) {
   const m1 = midpoint(prev, cur);
   const m2 = midpoint(cur, next);
-  ctx.lineWidth = widthFromPressure(cur.pressure);
   ctx.beginPath();
   ctx.moveTo(m1.x, m1.y);
   ctx.quadraticCurveTo(cur.x, cur.y, m2.x, m2.y);

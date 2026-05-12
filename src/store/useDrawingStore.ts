@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Stroke, Tool, ColorKey } from '../types/drawing';
+import type { Stroke, Tool, ColorKey, WidthKey } from '../types/drawing';
 import { setAnnotation } from '../lib/idbStorage';
 
 const UNDO_LIMIT = 30;
@@ -9,6 +9,7 @@ interface DrawingState {
   activePdfId: string | null;
   tool: Tool;
   color: ColorKey;
+  width: WidthKey;
   strokesByPage: Record<number, Stroke[]>;
   undoStackByPage: Record<number, Stroke[][]>;
   /** Increments only when persistent canvas needs a full clear+redraw
@@ -22,6 +23,7 @@ interface DrawingState {
 
   setTool: (tool: Tool) => void;
   setColor: (color: ColorKey) => void;
+  setWidth: (width: WidthKey) => void;
   setView: (view: { zoom: number; panX: number; panY: number }) => void;
   resetView: () => void;
 
@@ -56,6 +58,7 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   activePdfId: null,
   tool: 'pen',
   color: 'red',
+  width: 'med',
   strokesByPage: {},
   undoStackByPage: {},
   redrawCounter: 0,
@@ -64,7 +67,9 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   panY: 0,
 
   setTool: (tool) => set({ tool }),
-  setColor: (color) => set({ color, tool: 'pen' }),
+  setColor: (color) =>
+    set((s) => ({ color, tool: s.tool === 'eraser' ? 'pen' : s.tool })),
+  setWidth: (width) => set({ width }),
   setView: ({ zoom, panX, panY }) => set({ zoom, panX, panY }),
   resetView: () => set({ zoom: 1, panX: 0, panY: 0 }),
 

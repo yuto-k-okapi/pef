@@ -40,14 +40,15 @@ export function DiagnosticsPanel() {
     <>
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`fixed right-2 z-50 px-2.5 py-1 text-xs rounded shadow ${
+        className={`fixed left-1 z-50 px-1.5 py-0.5 text-[10px] rounded shadow opacity-70 ${
           errorCount > 0
             ? 'bg-red-600 text-white'
             : warnCount > 0
               ? 'bg-amber-500 text-white'
               : 'bg-gray-700 text-white'
         }`}
-        style={{ top: 'max(env(safe-area-inset-top), 0.5rem)' }}
+        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 0.25rem)' }}
+        aria-label="diagnostic log"
       >
         log {total > 0 ? `(${total})` : ''}
       </button>
