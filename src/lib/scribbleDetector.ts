@@ -1,11 +1,15 @@
 import type { Point, Stroke } from '../types/drawing';
 
-const MIN_POINTS = 8;
-const MIN_PATH_LENGTH = 80;
-const MIN_BBOX_DIAGONAL = 25;
-const MIN_COMPACTNESS = 2.5;
-const MIN_REVERSALS = 4;
-const REVERSAL_STRIDE_DIST = 6; // accumulate direction over ≥6 CSS pixels before checking for reversal
+// Tuned from real-stroke metrics: a normal complex character (n=69) had
+// rev=9 and compactness in the ~2 range. We raise both bars so only clearly
+// scribbled gestures trigger — a real 「ぐちゃぐちゃ」 has rev≥12 and
+// compactness≥3.5.
+const MIN_POINTS = 12;
+const MIN_PATH_LENGTH = 120;
+const MIN_BBOX_DIAGONAL = 30;
+const MIN_COMPACTNESS = 3.5;
+const MIN_REVERSALS = 12;
+const REVERSAL_STRIDE_DIST = 6;
 
 export interface ScribbleMetrics {
   points: number;

@@ -11,6 +11,7 @@ import {
   pointNearStroke,
   renderAllStrokes,
   renderStroke,
+  strokesIntersect,
 } from '../lib/strokeRenderer';
 import { analyzeStroke } from '../lib/scribbleDetector';
 import { useLogStore } from '../lib/diagnostics';
@@ -194,13 +195,21 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
         .getState()
         .add(
           'warn',
-          `commit n=${m.points} len=${m.pathLength.toFixed(0)} bbox=${m.bboxDiagonal.toFixed(0)} comp=${m.compactness.toFixed(2)} rev=${m.reversals} (scribble would be ${m.isScribble ? 'YES' : 'no'})`,
+          `commit n=${m.points} len=${m.pathLength.toFixed(0)} bbox=${m.bboxDiagonal.toFixed(0)} comp=${m.compactness.toFixed(2)} rev=${m.reversals} → ${m.isScribble ? 'SCRIBBLE' : 'ink'}`,
         );
 
-      // NOTE: scribble auto-erase is temporarily disabled — coalesced
-      // events made the heuristic too aggressive. Reintroduce once we have
-      // good calibration data from real strokes.
-      // if (m.isScribble) { ... }
+      if (m.isScribble) {
+        const cur = useDrawingStore.getState().strokesByPage[page] ?? EMPTY;
+        const indices: number[] = [];
+        for (let i = 0; i < cur.length; i++) {
+          if (strokesIntersect(cur[i], liveStroke)) indices.push(i);
+        }
+        clearCanvas(live);
+        if (indices.length > 0) {
+          useDrawingStore.getState().removeStrokes(page, indices);
+        }
+        return;
+      }
 
       // Paint to persistent first to avoid flash, then clear live.
       if (persistentRef.current) {
