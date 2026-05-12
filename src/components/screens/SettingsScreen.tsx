@@ -6,7 +6,7 @@ import {
   COLORS,
 } from '../../types/drawing';
 import type { ColorKey } from '../../types/drawing';
-import { ScribblePreview } from '../ScribblePreview';
+import { PreviewPanel } from '../PreviewPanel';
 
 interface Props {
   onBack: () => void;
@@ -167,7 +167,8 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
         <h1 className="text-lg font-bold flex-1">設定</h1>
       </header>
 
-      <div className="flex-1 overflow-auto px-4 py-4">
+      <div className="flex-1 flex overflow-hidden">
+       <div className="flex-1 overflow-auto px-4 py-4">
         <Section
           title="ツールバーの色（4スロット）"
           hint="スロットをタップすると変更できます。"
@@ -242,10 +243,9 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
                 step={0.1}
                 onChange={(v) => s.update({ scribbleMinCompactness: v })}
               />
-              <p className="text-xs text-gray-400 mt-1 mb-3">
-                目安: 厳しく=反転12/圧縮3.5、標準=8/3.0、ゆるい=5/2.5
+              <p className="text-xs text-gray-400 mt-1">
+                目安: 厳しく=反転12/圧縮3.5、標準=8/3.0、ゆるい=5/2.5。右のプレビューで実際の判定値を確認できます。
               </p>
-              <ScribblePreview />
             </>
           )}
         </Section>
@@ -318,6 +318,10 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
             <li>「書き出し」で添削済みPDFを共有/ダウンロード</li>
           </ul>
         </Section>
+       </div>
+       <div className="w-72 shrink-0 hidden md:block">
+         <PreviewPanel />
+       </div>
       </div>
     </div>
   );
