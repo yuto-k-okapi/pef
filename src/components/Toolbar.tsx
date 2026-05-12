@@ -1,6 +1,22 @@
+import { useEffect } from 'react';
 import { useDrawingStore } from '../store/useDrawingStore';
 import { useSettingsStore, widthValue } from '../store/useSettingsStore';
-import { COLORS, COLOR_ORDER, WIDTH_ORDER } from '../types/drawing';
+import { COLORS, WIDTH_ORDER } from '../types/drawing';
+
+function EraserIcon({ className = 'w-6 h-3' }: { className?: string }) {
+  // Mini pink eraser: two-tone block (light top + darker base) that reads as
+  // a physical eraser at glance.
+  return (
+    <span
+      className={`relative inline-block ${className}`}
+      aria-hidden="true"
+      style={{ transform: 'rotate(-18deg)' }}
+    >
+      <span className="absolute inset-0 bg-pink-300 rounded-sm" />
+      <span className="absolute inset-x-0 bottom-0 h-1/3 bg-pink-500 rounded-b-sm" />
+    </span>
+  );
+}
 
 export function Toolbar({ page }: { page: number }) {
   const tool = useDrawingStore((s) => s.tool);
@@ -12,6 +28,11 @@ export function Toolbar({ page }: { page: number }) {
   const undo = useDrawingStore((s) => s.undo);
   const undoDepth = useDrawingStore((s) => s.undoStackByPage[page]?.length ?? 0);
   const settings = useSettingsStore();
+
+  // If the user disables pencil while it's the active tool, fall back to pen.
+  useEffect(() => {
+    if (tool === 'pencil' && !settings.pencilEnabled) setTool('pen');
+  }, [tool, settings.pencilEnabled, setTool]);
 
   const isInk = tool === 'pen' || tool === 'pencil';
 
@@ -31,25 +52,29 @@ export function Toolbar({ page }: { page: number }) {
       >
         ✒︎
       </button>
-      <button
-        onClick={() => setTool('pencil')}
-        aria-label="pencil"
-        title="鉛筆"
-        className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${
-          tool === 'pencil' ? 'bg-blue-100 ring-2 ring-blue-500' : 'bg-gray-100'
-        }`}
-      >
-        ✏︎
-      </button>
+      {settings.pencilEnabled && (
+        <button
+          onClick={() => setTool('pencil')}
+          aria-label="pencil"
+          title="鉛筆"
+          className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg ${
+            tool === 'pencil'
+              ? 'bg-blue-100 ring-2 ring-blue-500'
+              : 'bg-gray-100'
+          }`}
+        >
+          ✏︎
+        </button>
+      )}
 
       <div className="h-px w-8 bg-gray-300 my-1" />
 
-      {/* Color swatches */}
-      {COLOR_ORDER.map((c) => {
+      {/* Color swatches from settings.paletteColors */}
+      {settings.paletteColors.map((c, idx) => {
         const active = isInk && color === c;
         return (
           <button
-            key={c}
+            key={`${c}-${idx}`}
             onClick={() => setColor(c)}
             aria-label={`color-${c}`}
             className={`w-10 h-10 rounded-full transition-transform ${
@@ -71,9 +96,7 @@ export function Toolbar({ page }: { page: number }) {
             key={w}
             onClick={() => setWidth(w)}
             aria-label={`width-${w}`}
-            title={
-              w === 'thin' ? '細' : w === 'med' ? '中' : '太'
-            }
+            title={w === 'thin' ? '細' : w === 'med' ? '中' : '太'}
             className={`w-10 h-10 rounded-lg flex items-center justify-center ${
               active ? 'bg-blue-100 ring-2 ring-blue-500' : 'bg-gray-100'
             }`}
@@ -92,11 +115,11 @@ export function Toolbar({ page }: { page: number }) {
         onClick={() => setTool('eraser')}
         aria-label="eraser"
         title="消しゴム"
-        className={`w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-lg ${
+        className={`w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center ${
           tool === 'eraser' ? 'ring-2 ring-blue-500' : ''
         }`}
       >
-        ⌫
+        <EraserIcon />
       </button>
       <button
         onClick={() => undo(page)}

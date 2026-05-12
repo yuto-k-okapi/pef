@@ -18,17 +18,69 @@ export interface Stroke {
 }
 
 export type Tool = 'pen' | 'pencil' | 'eraser';
-export type ColorKey = 'red' | 'blue' | 'black' | 'green';
+export type ColorKey =
+  | 'red'
+  | 'pink'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'teal'
+  | 'blue'
+  | 'indigo'
+  | 'purple'
+  | 'black'
+  | 'gray'
+  | 'brown';
 export type WidthKey = 'thin' | 'med' | 'thick';
 
 export const COLORS: Record<ColorKey, string> = {
   red: '#dc2626',
-  blue: '#2563eb',
-  black: '#1f2937',
+  pink: '#ec4899',
+  orange: '#ea580c',
+  yellow: '#ca8a04',
   green: '#16a34a',
+  teal: '#0d9488',
+  blue: '#2563eb',
+  indigo: '#4f46e5',
+  purple: '#9333ea',
+  black: '#1f2937',
+  gray: '#6b7280',
+  brown: '#854d0e',
 };
 
-export const COLOR_ORDER: ColorKey[] = ['red', 'blue', 'black', 'green'];
+export const ALL_COLOR_KEYS: ColorKey[] = [
+  'red',
+  'pink',
+  'orange',
+  'yellow',
+  'green',
+  'teal',
+  'blue',
+  'indigo',
+  'purple',
+  'black',
+  'gray',
+  'brown',
+];
+
+export const COLOR_NAMES: Record<ColorKey, string> = {
+  red: '赤',
+  pink: '桃',
+  orange: '橙',
+  yellow: '黄',
+  green: '緑',
+  teal: '青緑',
+  blue: '青',
+  indigo: '藍',
+  purple: '紫',
+  black: '黒',
+  gray: '灰',
+  brown: '茶',
+};
+
+// Legacy default palette (used as fallback when settings hasn't been
+// initialised yet). The active palette lives in settings.paletteColors.
+export const DEFAULT_PALETTE: ColorKey[] = ['red', 'blue', 'black', 'green'];
 
 export const WIDTH_PX: Record<WidthKey, number> = {
   thin: 1.4,

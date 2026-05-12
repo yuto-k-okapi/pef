@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useDrawingStore } from '../store/useDrawingStore';
 import {
-  thresholdsFor,
+  scribbleThresholdsFrom,
   useSettingsStore,
   widthValue,
 } from '../store/useSettingsStore';
@@ -198,8 +198,8 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       }
 
       // pen / pencil
-      const sensitivity = useSettingsStore.getState().scribbleSensitivity;
-      const m = analyzeStroke(liveStroke, thresholdsFor(sensitivity));
+      const thresholds = scribbleThresholdsFrom(useSettingsStore.getState());
+      const m = analyzeStroke(liveStroke, thresholds);
       useLogStore
         .getState()
         .add(

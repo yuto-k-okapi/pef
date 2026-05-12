@@ -1,28 +1,16 @@
 import { useState } from 'react';
+import { useSettingsStore } from '../../store/useSettingsStore';
 import {
-  useSettingsStore,
-  type ScribbleSensitivity,
-} from '../../store/useSettingsStore';
+  ALL_COLOR_KEYS,
+  COLOR_NAMES,
+  COLORS,
+} from '../../types/drawing';
+import type { ColorKey } from '../../types/drawing';
 
 interface Props {
   onBack: () => void;
   onClearAllPdfs: () => Promise<void>;
 }
-
-const SENSITIVITY_OPTIONS: {
-  value: ScribbleSensitivity;
-  label: string;
-  desc: string;
-}[] = [
-  { value: 'off', label: 'オフ', desc: '自動消去しない' },
-  {
-    value: 'strict',
-    label: '厳しい',
-    desc: '明確なぐちゃぐちゃのみ（推奨）',
-  },
-  { value: 'normal', label: '標準', desc: 'バランス' },
-  { value: 'loose', label: 'ゆるい', desc: '積極的に消去（誤判定多め）' },
-];
 
 function NumberSlider({
   label,
@@ -45,7 +33,7 @@ function NumberSlider({
 }) {
   return (
     <div className="flex items-center gap-3 py-2">
-      <label className="w-16 text-sm">{label}</label>
+      <label className="w-20 text-sm">{label}</label>
       {preview}
       <input
         type="range"
@@ -67,15 +55,83 @@ function NumberSlider({
 function Section({
   title,
   children,
+  hint,
 }: {
   title: string;
   children: React.ReactNode;
+  hint?: string;
 }) {
   return (
     <section className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
-      <h2 className="text-sm font-bold text-gray-700 mb-3">{title}</h2>
+      <h2 className="text-sm font-bold text-gray-700 mb-1">{title}</h2>
+      {hint && <p className="text-xs text-gray-500 mb-2">{hint}</p>}
       {children}
     </section>
+  );
+}
+
+function PaletteEditor({
+  colors,
+  onChange,
+}: {
+  colors: ColorKey[];
+  onChange: (next: ColorKey[]) => void;
+}) {
+  const [editingSlot, setEditingSlot] = useState<number | null>(null);
+
+  function setSlot(idx: number, c: ColorKey) {
+    const next = colors.slice();
+    next[idx] = c;
+    onChange(next);
+  }
+
+  return (
+    <div>
+      <div className="flex gap-2 mb-2">
+        {colors.map((c, idx) => {
+          const active = editingSlot === idx;
+          return (
+            <button
+              key={idx}
+              onClick={() => setEditingSlot(active ? null : idx)}
+              aria-label={`slot ${idx + 1}`}
+              className={`w-12 h-12 rounded-full transition-transform ${
+                active ? 'scale-110 ring-2 ring-offset-2 ring-blue-500' : 'ring-1 ring-gray-200'
+              }`}
+              style={{ backgroundColor: COLORS[c] }}
+            />
+          );
+        })}
+      </div>
+      {editingSlot !== null && (
+        <div className="mt-2 p-3 bg-gray-50 rounded-lg">
+          <div className="text-xs text-gray-500 mb-2">
+            スロット {editingSlot + 1} の色を選択
+          </div>
+          <div className="grid grid-cols-6 gap-2">
+            {ALL_COLOR_KEYS.map((c) => {
+              const selected = colors[editingSlot] === c;
+              return (
+                <button
+                  key={c}
+                  onClick={() => {
+                    setSlot(editingSlot, c);
+                    setEditingSlot(null);
+                  }}
+                  aria-label={COLOR_NAMES[c]}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center text-[10px] font-medium text-white ${
+                    selected ? 'ring-2 ring-offset-2 ring-blue-500' : ''
+                  }`}
+                  style={{ backgroundColor: COLORS[c] }}
+                >
+                  {COLOR_NAMES[c]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -106,6 +162,51 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
       </header>
 
       <div className="flex-1 overflow-auto px-4 py-4">
+        <Section
+          title="ツールバーの色（4スロット）"
+          hint="スロットをタップすると変更できます。"
+        >
+          <PaletteEditor
+            colors={s.paletteColors}
+            onChange={(next) => s.update({ paletteColors: next })}
+          />
+        </Section>
+
+        <Section title="ペン種">
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 py-1">
+              <span className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-lg">
+                ✒︎
+              </span>
+              <div className="flex-1">
+                <div className="text-sm font-medium">ペン</div>
+                <div className="text-xs text-gray-500">
+                  常時有効（無効化不可）
+                </div>
+              </div>
+            </div>
+            <label className="flex items-center gap-3 py-1 cursor-pointer">
+              <span className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-lg">
+                ✏︎
+              </span>
+              <div className="flex-1">
+                <div className="text-sm font-medium">鉛筆</div>
+                <div className="text-xs text-gray-500">
+                  ツールバーに表示する
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={s.pencilEnabled}
+                onChange={(e) =>
+                  s.update({ pencilEnabled: e.target.checked })
+                }
+                className="w-5 h-5"
+              />
+            </label>
+          </div>
+        </Section>
+
         <Section title="ペンの太さ（パレットの3種類）">
           <NumberSlider
             label="細"
@@ -162,36 +263,42 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
           />
         </Section>
 
-        <Section title="ぐちゃぐちゃ消し">
-          <p className="text-xs text-gray-500 mb-2">
-            ペン入力をぐちゃぐちゃと往復させると、そのエリアの添削を自動消去します。
-          </p>
-          <div className="space-y-1">
-            {SENSITIVITY_OPTIONS.map((opt) => {
-              const active = s.scribbleSensitivity === opt.value;
-              return (
-                <button
-                  key={opt.value}
-                  onClick={() => s.update({ scribbleSensitivity: opt.value })}
-                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left ${
-                    active ? 'bg-blue-50 ring-2 ring-blue-500' : 'bg-gray-50'
-                  }`}
-                >
-                  <span
-                    className={`w-4 h-4 rounded-full border-2 shrink-0 ${
-                      active
-                        ? 'border-blue-500 bg-blue-500'
-                        : 'border-gray-300'
-                    }`}
-                  />
-                  <div className="flex-1">
-                    <div className="text-sm font-medium">{opt.label}</div>
-                    <div className="text-xs text-gray-500">{opt.desc}</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+        <Section
+          title="ぐちゃぐちゃ消し"
+          hint="ペンを大きく往復させたらそのエリアの添削を自動消去します。数値が大きいほど起動しにくくなります。"
+        >
+          <label className="flex items-center gap-3 py-1 mb-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={s.scribbleEnabled}
+              onChange={(e) => s.update({ scribbleEnabled: e.target.checked })}
+              className="w-5 h-5"
+            />
+            <span className="text-sm">有効にする</span>
+          </label>
+          {s.scribbleEnabled && (
+            <>
+              <NumberSlider
+                label="反転回数"
+                value={s.scribbleMinReversals}
+                min={4}
+                max={20}
+                step={1}
+                onChange={(v) => s.update({ scribbleMinReversals: v })}
+              />
+              <NumberSlider
+                label="圧縮率"
+                value={s.scribbleMinCompactness}
+                min={2.0}
+                max={5.0}
+                step={0.1}
+                onChange={(v) => s.update({ scribbleMinCompactness: v })}
+              />
+              <p className="text-xs text-gray-400 mt-2">
+                目安: 厳しく=反転12/圧縮3.5、標準=8/3.0、ゆるい=5/2.5
+              </p>
+            </>
+          )}
         </Section>
 
         <Section title="データ">
@@ -246,12 +353,6 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
               <dt className="w-24 text-gray-500">ソース</dt>
               <dd className="text-blue-600 break-all">
                 github.com/yuto-k-okapi/pef
-              </dd>
-            </div>
-            <div className="flex">
-              <dt className="w-24 text-gray-500">技術</dt>
-              <dd className="text-gray-600">
-                Vite · React · PDF.js · pdf-lib · Tailwind
               </dd>
             </div>
           </dl>

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-
-export type ScribbleSensitivity = 'off' | 'strict' | 'normal' | 'loose';
+import type { ColorKey, WidthKey } from '../types/drawing';
+import { DEFAULT_PALETTE } from '../types/drawing';
 
 export interface ScribbleThresholds {
   minPoints: number;
@@ -10,53 +10,43 @@ export interface ScribbleThresholds {
   minReversals: number;
 }
 
-export const SCRIBBLE_THRESHOLDS: Record<
-  Exclude<ScribbleSensitivity, 'off'>,
-  ScribbleThresholds
-> = {
-  strict: {
-    minPoints: 12,
-    minPathLength: 120,
-    minBboxDiagonal: 30,
-    minCompactness: 3.5,
-    minReversals: 12,
-  },
-  normal: {
-    minPoints: 10,
-    minPathLength: 90,
-    minBboxDiagonal: 25,
-    minCompactness: 3.0,
-    minReversals: 8,
-  },
-  loose: {
-    minPoints: 8,
-    minPathLength: 60,
-    minBboxDiagonal: 20,
-    minCompactness: 2.5,
-    minReversals: 5,
-  },
+// Fixed lower bounds — not user-tunable to keep the UI focused on the two
+// values that actually shape the heuristic.
+const SCRIBBLE_FIXED = {
+  minPoints: 8,
+  minPathLength: 80,
+  minBboxDiagonal: 25,
 };
 
-export function thresholdsFor(s: ScribbleSensitivity): ScribbleThresholds | null {
-  return s === 'off' ? null : SCRIBBLE_THRESHOLDS[s];
-}
-
 export interface Settings {
+  // Pen widths (the 3 slots shown in the palette)
   widthThin: number;
   widthMed: number;
   widthThick: number;
-  eraserRadius: number;
+  // The 4 color slots shown in the palette
+  paletteColors: ColorKey[];
+  // Pencil
   pencilAlpha: number;
-  scribbleSensitivity: ScribbleSensitivity;
+  pencilEnabled: boolean;
+  // Eraser
+  eraserRadius: number;
+  // Scribble auto-erase
+  scribbleEnabled: boolean;
+  scribbleMinReversals: number;
+  scribbleMinCompactness: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   widthThin: 1.4,
   widthMed: 2.4,
   widthThick: 4.2,
-  eraserRadius: 5,
+  paletteColors: [...DEFAULT_PALETTE],
   pencilAlpha: 0.55,
-  scribbleSensitivity: 'strict',
+  pencilEnabled: true,
+  eraserRadius: 5,
+  scribbleEnabled: true,
+  scribbleMinReversals: 12,
+  scribbleMinCompactness: 3.5,
 };
 
 const STORAGE_KEY = 'pdf-writer-settings';
@@ -96,9 +86,13 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         widthThin: next.widthThin,
         widthMed: next.widthMed,
         widthThick: next.widthThick,
-        eraserRadius: next.eraserRadius,
+        paletteColors: next.paletteColors,
         pencilAlpha: next.pencilAlpha,
-        scribbleSensitivity: next.scribbleSensitivity,
+        pencilEnabled: next.pencilEnabled,
+        eraserRadius: next.eraserRadius,
+        scribbleEnabled: next.scribbleEnabled,
+        scribbleMinReversals: next.scribbleMinReversals,
+        scribbleMinCompactness: next.scribbleMinCompactness,
       });
       return next;
     }),
@@ -107,8 +101,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     set(DEFAULT_SETTINGS);
   },
 }));
-
-import type { WidthKey } from '../types/drawing';
 
 export function widthValue(key: WidthKey, settings: Settings): number {
   switch (key) {
@@ -119,4 +111,13 @@ export function widthValue(key: WidthKey, settings: Settings): number {
     case 'thick':
       return settings.widthThick;
   }
+}
+
+export function scribbleThresholdsFrom(s: Settings): ScribbleThresholds | null {
+  if (!s.scribbleEnabled) return null;
+  return {
+    ...SCRIBBLE_FIXED,
+    minCompactness: s.scribbleMinCompactness,
+    minReversals: s.scribbleMinReversals,
+  };
 }
