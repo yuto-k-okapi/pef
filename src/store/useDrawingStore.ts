@@ -35,6 +35,14 @@ interface DrawingState {
 
   addStroke: (page: number, stroke: Stroke) => void;
   removeStrokes: (page: number, indices: number[]) => void;
+  /** Translate every stroke at the given indices by (dx, dy). Used by the
+   * lasso tool to move a selection. */
+  translateStrokes: (
+    page: number,
+    indices: number[],
+    dx: number,
+    dy: number,
+  ) => void;
   undo: (page: number) => void;
   /** Shift every stroke at pages > `afterPage` up by one slot (used when a
    * new blank page is inserted immediately after the current page). */
@@ -116,6 +124,30 @@ export const useDrawingStore = create<DrawingState>((set) => ({
       const idx = new Set(indices);
       const next = cur.filter((_, i) => !idx.has(i));
       if (next.length === cur.length) return s;
+      persist(s.activePdfId, page, next);
+      return {
+        strokesByPage: { ...s.strokesByPage, [page]: next },
+        undoStackByPage: pushUndo(s.undoStackByPage, page, cur),
+        redrawCounter: s.redrawCounter + 1,
+      };
+    }),
+
+  translateStrokes: (page, indices, dx, dy) =>
+    set((s) => {
+      if (indices.length === 0 || (dx === 0 && dy === 0)) return s;
+      const cur = s.strokesByPage[page] ?? [];
+      const idxSet = new Set(indices);
+      const next = cur.map((stroke, i) => {
+        if (!idxSet.has(i)) return stroke;
+        return {
+          ...stroke,
+          points: stroke.points.map((p) => ({
+            x: p.x + dx,
+            y: p.y + dy,
+            pressure: p.pressure,
+          })),
+        };
+      });
       persist(s.activePdfId, page, next);
       return {
         strokesByPage: { ...s.strokesByPage, [page]: next },

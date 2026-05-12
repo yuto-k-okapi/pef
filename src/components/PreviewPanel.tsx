@@ -25,38 +25,58 @@ import {
   strokesIntersect,
 } from '../lib/strokeRenderer';
 
-/**
- * Persistent preview area for the settings screen. Lets the user try out
- * the active palette/tool/size settings on a small canvas with live scribble
- * verdict shown when the heuristic is enabled.
- */
+type SourceTag = 'pointer' | 'touch' | null;
+
+interface IOSTouch extends Touch {
+  touchType?: 'direct' | 'stylus';
+}
+
+function findStylus(list: TouchList): IOSTouch | null {
+  for (let i = 0; i < list.length; i++) {
+    const t = list[i] as IOSTouch;
+    if (t.touchType === 'stylus') return t;
+  }
+  return null;
+}
+
+function findTouchById(list: TouchList, id: number): IOSTouch | null {
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].identifier === id) return list[i] as IOSTouch;
+  }
+  return null;
+}
+
 export function PreviewPanel() {
   const [tool, setTool] = useState<Tool>('pen');
   const [colorIdx, setColorIdx] = useState(0);
   const [widthKey, setWidthKey] = useState<WidthKey>('med');
   const [metrics, setMetrics] = useState<ScribbleMetrics | null>(null);
+  const [hasContent, setHasContent] = useState(false);
   const settings = useSettingsStore();
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const liveStrokeRef = useRef<Stroke | null>(null);
   const strokesRef = useRef<Stroke[]>([]);
-  const [hasContent, setHasContent] = useState(false);
+  const sourceRef = useRef<SourceTag>(null);
+  const activeTouchIdRef = useRef<number | null>(null);
 
-  // Mutable state snapshot so the long-lived event listeners always read fresh values.
+  // Mutable state snapshot so the long-lived listeners read fresh values.
   const stateRef = useRef({ tool, colorIdx, widthKey, settings });
   stateRef.current = { tool, colorIdx, widthKey, settings };
 
   function clear() {
     strokesRef.current = [];
     liveStrokeRef.current = null;
+    sourceRef.current = null;
+    activeTouchIdRef.current = null;
     setMetrics(null);
     setHasContent(false);
     const c = canvasRef.current;
     if (c) clearCanvas(c);
   }
 
-  // Keep the canvas sized to its wrapper (handles rotation / resize)
+  // Keep the canvas sized to its wrapper
   useEffect(() => {
     const wrap = wrapRef.current;
     const c = canvasRef.current;
@@ -79,17 +99,26 @@ export function PreviewPanel() {
     return () => obs.disconnect();
   }, []);
 
-  // Pointer event listeners (attached once)
+  // Pointer + Touch listeners (attached once)
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
 
-    const getPoint = (e: PointerEvent): Point => {
+    const pointerToPoint = (e: PointerEvent): Point => {
       const r = c.getBoundingClientRect();
       return {
         x: e.clientX - r.left,
         y: e.clientY - r.top,
         pressure: e.pressure > 0 ? e.pressure : 0.5,
+      };
+    };
+
+    const touchToPoint = (t: IOSTouch): Point => {
+      const r = c.getBoundingClientRect();
+      return {
+        x: t.clientX - r.left,
+        y: t.clientY - r.top,
+        pressure: t.force > 0 ? t.force : 0.5,
       };
     };
 
@@ -105,16 +134,9 @@ export function PreviewPanel() {
       }
     };
 
-    const onDown = (e: PointerEvent) => {
-      e.preventDefault();
-      try {
-        c.setPointerCapture(e.pointerId);
-      } catch {
-        /* ignore */
-      }
-      const pt = getPoint(e);
+    const beginStroke = (pt: Point, source: SourceTag) => {
       const { tool, colorIdx, widthKey, settings } = stateRef.current;
-
+      sourceRef.current = source;
       if (tool === 'eraser') {
         eraseAt(pt);
         liveStrokeRef.current = { points: [pt], color: '__eraser__' };
@@ -134,60 +156,42 @@ export function PreviewPanel() {
       setHasContent(true);
     };
 
-    const onMove = (e: PointerEvent) => {
+    const continueStroke = (pt: Point) => {
       const live = liveStrokeRef.current;
       if (!live) return;
-      e.preventDefault();
-      const events =
-        typeof e.getCoalescedEvents === 'function'
-          ? e.getCoalescedEvents()
-          : [e];
+      live.points.push(pt);
       const { tool } = stateRef.current;
-
       if (tool === 'eraser') {
-        for (const ev of events) {
-          const pt = getPoint(ev);
-          live.points.push(pt);
-          eraseAt(pt);
-        }
+        eraseAt(pt);
         return;
       }
-
       const ctx = c.getContext('2d');
       if (!ctx) return;
       if (tool === 'pencil') {
-        for (const ev of events) {
-          live.points.push(getPoint(ev));
-          if (live.points.length >= 2) drawIncrementalPencilSegment(ctx, live);
-        }
+        if (live.points.length >= 2) drawIncrementalPencilSegment(ctx, live);
       } else {
         applyLivePenStyle(ctx, live);
-        for (const ev of events) {
-          live.points.push(getPoint(ev));
-          const pts = live.points;
-          const n = pts.length;
-          if (n === 2) drawLine(ctx, pts[0], pts[1]);
-          else if (n >= 3)
-            drawCurveSegment(ctx, pts[n - 3], pts[n - 2], pts[n - 1]);
-        }
+        const pts = live.points;
+        const n = pts.length;
+        if (n === 2) drawLine(ctx, pts[0], pts[1]);
+        else if (n >= 3)
+          drawCurveSegment(ctx, pts[n - 3], pts[n - 2], pts[n - 1]);
       }
     };
 
-    const onUp = (e: PointerEvent) => {
+    const finalizeStroke = () => {
       const live = liveStrokeRef.current;
-      liveStrokeRef.current = null; // critical: allow next stroke to start
+      liveStrokeRef.current = null;
+      sourceRef.current = null;
+      activeTouchIdRef.current = null;
       if (!live) return;
-      e.preventDefault();
-      try {
-        c.releasePointerCapture(e.pointerId);
-      } catch {
-        /* ignore */
-      }
+
       const { tool, settings } = stateRef.current;
       if (tool === 'eraser') {
         if (strokesRef.current.length === 0) setHasContent(false);
         return;
       }
+      if (tool === 'lasso') return;
 
       strokesRef.current = [...strokesRef.current, live];
       const m = analyzeStroke(live, scribbleThresholdsFrom(settings));
@@ -205,15 +209,88 @@ export function PreviewPanel() {
       if (strokesRef.current.length === 0) setHasContent(false);
     };
 
-    c.addEventListener('pointerdown', onDown);
-    c.addEventListener('pointermove', onMove);
-    c.addEventListener('pointerup', onUp);
-    c.addEventListener('pointercancel', onUp);
+    // ---- Pointer Events ----
+    const onPointerDown = (e: PointerEvent) => {
+      if (liveStrokeRef.current) return; // touch already started
+      e.preventDefault();
+      try {
+        c.setPointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      beginStroke(pointerToPoint(e), 'pointer');
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (sourceRef.current !== 'pointer') return;
+      e.preventDefault();
+      const events =
+        typeof e.getCoalescedEvents === 'function'
+          ? e.getCoalescedEvents()
+          : [e];
+      for (const ev of events) continueStroke(pointerToPoint(ev));
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (sourceRef.current !== 'pointer') return;
+      e.preventDefault();
+      try {
+        if (c.hasPointerCapture(e.pointerId))
+          c.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      finalizeStroke();
+    };
+
+    // ---- Touch Events (stylus backup on iPadOS) ----
+    const onTouchStart = (e: TouchEvent) => {
+      const stylus = findStylus(e.changedTouches);
+      if (!stylus) return;
+      e.preventDefault();
+      if (liveStrokeRef.current) return; // pointer already started
+      activeTouchIdRef.current = stylus.identifier;
+      beginStroke(touchToPoint(stylus), 'touch');
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (sourceRef.current !== 'touch') return;
+      const id = activeTouchIdRef.current;
+      if (id === null) return;
+      const t = findTouchById(e.changedTouches, id);
+      if (!t) return;
+      e.preventDefault();
+      continueStroke(touchToPoint(t));
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (sourceRef.current !== 'touch') return;
+      const id = activeTouchIdRef.current;
+      if (id === null) return;
+      const t = findTouchById(e.changedTouches, id);
+      if (!t) return;
+      e.preventDefault();
+      finalizeStroke();
+    };
+
+    c.addEventListener('pointerdown', onPointerDown);
+    c.addEventListener('pointermove', onPointerMove);
+    c.addEventListener('pointerup', onPointerUp);
+    c.addEventListener('pointercancel', onPointerUp);
+    c.addEventListener('touchstart', onTouchStart, { passive: false });
+    c.addEventListener('touchmove', onTouchMove, { passive: false });
+    c.addEventListener('touchend', onTouchEnd, { passive: false });
+    c.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
     return () => {
-      c.removeEventListener('pointerdown', onDown);
-      c.removeEventListener('pointermove', onMove);
-      c.removeEventListener('pointerup', onUp);
-      c.removeEventListener('pointercancel', onUp);
+      c.removeEventListener('pointerdown', onPointerDown);
+      c.removeEventListener('pointermove', onPointerMove);
+      c.removeEventListener('pointerup', onPointerUp);
+      c.removeEventListener('pointercancel', onPointerUp);
+      c.removeEventListener('touchstart', onTouchStart);
+      c.removeEventListener('touchmove', onTouchMove);
+      c.removeEventListener('touchend', onTouchEnd);
+      c.removeEventListener('touchcancel', onTouchEnd);
     };
   }, []);
 
@@ -236,7 +313,6 @@ export function PreviewPanel() {
       <div className="px-3 py-2 border-b border-gray-200">
         <div className="text-xs font-medium text-gray-500 mb-2">プレビュー</div>
 
-        {/* Tool selector */}
         <div className="flex gap-1.5 mb-1.5">
           <button
             onClick={() => setTool('pen')}
@@ -279,7 +355,6 @@ export function PreviewPanel() {
           </button>
         </div>
 
-        {/* Colors */}
         {isInk && (
           <div className="flex gap-1.5 mb-1.5">
             {settings.paletteColors.map((c, idx) => (
@@ -298,7 +373,6 @@ export function PreviewPanel() {
           </div>
         )}
 
-        {/* Width chips */}
         {isInk && (
           <div className="flex gap-1.5 mb-1.5">
             {WIDTH_ORDER.map((w) => {
@@ -325,7 +399,6 @@ export function PreviewPanel() {
           </div>
         )}
 
-        {/* Pencil darkness */}
         {tool === 'pencil' && (
           <div className="flex gap-1.5">
             {PENCIL_DARKNESS_ORDER.map((d) => {
@@ -351,7 +424,6 @@ export function PreviewPanel() {
           </div>
         )}
 
-        {/* Eraser size */}
         {tool === 'eraser' && (
           <div className="flex gap-1.5">
             {ERASER_SIZE_ORDER.map((sz) => {

@@ -75,6 +75,15 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
     x: number;
     y: number;
   } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const lassoDragRef = useRef<{
+    initialX: number;
+    initialY: number;
+    dx: number;
+    dy: number;
+  } | null>(null);
+  const selectedIndicesRef = useRef<number[]>([]);
+  selectedIndicesRef.current = selectedIndices;
 
   // Resize both canvases when dimensions change, applying DPR transform
   useEffect(() => {
@@ -222,11 +231,101 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       ctx.restore();
     };
 
+    const drawSelectedTranslated = (
+      strokes: Stroke[],
+      indices: number[],
+      dx: number,
+      dy: number,
+    ) => {
+      clearCanvas(live);
+      const ctx = live.getContext('2d');
+      if (!ctx || indices.length === 0) return;
+      for (const idx of indices) {
+        const s = strokes[idx];
+        if (!s) continue;
+        const translated: Stroke = {
+          ...s,
+          points: s.points.map((p) => ({
+            x: p.x + dx,
+            y: p.y + dy,
+            pressure: p.pressure,
+          })),
+        };
+        renderStroke(ctx, translated);
+        // Halo
+        ctx.save();
+        ctx.strokeStyle = 'rgba(59, 130, 246, 0.42)';
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = (s.width ?? 2.4) + 8;
+        ctx.beginPath();
+        const pts = translated.points;
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.stroke();
+        ctx.restore();
+      }
+    };
+
+    const isPointInSelectionBbox = (
+      pt: Point,
+      strokes: Stroke[],
+      indices: number[],
+    ): boolean => {
+      if (indices.length === 0) return false;
+      let minX = Infinity;
+      let maxX = -Infinity;
+      let minY = Infinity;
+      let maxY = -Infinity;
+      for (const idx of indices) {
+        const s = strokes[idx];
+        if (!s) continue;
+        for (const p of s.points) {
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.y > maxY) maxY = p.y;
+        }
+      }
+      const slack = 14;
+      return (
+        pt.x >= minX - slack &&
+        pt.x <= maxX + slack &&
+        pt.y >= minY - slack &&
+        pt.y <= maxY + slack
+      );
+    };
+
     const beginStroke = (pt: Point, source: SourceTag) => {
       const { tool, color, width } = useDrawingStore.getState();
       const settings = useSettingsStore.getState();
       sourceRef.current = source;
       if (tool === 'lasso') {
+        const cur = useDrawingStore.getState().strokesByPage[page] ?? EMPTY;
+        const sel = selectedIndicesRef.current;
+        if (
+          sel.length > 0 &&
+          isPointInSelectionBbox(pt, cur, sel)
+        ) {
+          // Begin drag-to-move
+          lassoDragRef.current = {
+            initialX: pt.x,
+            initialY: pt.y,
+            dx: 0,
+            dy: 0,
+          };
+          liveStrokeRef.current = { points: [pt], color: '__drag__' };
+          setIsDragging(true);
+          // Persistent: render WITHOUT selected (they'll appear on live)
+          const remaining = cur.filter(
+            (_, i) => !new Set(sel).has(i),
+          );
+          if (persistentRef.current)
+            renderAllStrokes(persistentRef.current, remaining);
+          drawSelectedTranslated(cur, sel, 0, 0);
+          return;
+        }
+        // Otherwise start a new lasso
         liveStrokeRef.current = { points: [pt], color: '__lasso__' };
         setSelectedIndices([]);
         setActionBarPos(null);
@@ -260,6 +359,18 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       liveStroke.points.push(pt);
       const tool = useDrawingStore.getState().tool;
       if (tool === 'lasso') {
+        if (lassoDragRef.current) {
+          lassoDragRef.current.dx = pt.x - lassoDragRef.current.initialX;
+          lassoDragRef.current.dy = pt.y - lassoDragRef.current.initialY;
+          const cur = useDrawingStore.getState().strokesByPage[page] ?? EMPTY;
+          drawSelectedTranslated(
+            cur,
+            selectedIndicesRef.current,
+            lassoDragRef.current.dx,
+            lassoDragRef.current.dy,
+          );
+          return;
+        }
         drawLassoPath(liveStroke.points);
         return;
       }
@@ -280,6 +391,27 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
 
       const tool = useDrawingStore.getState().tool;
       if (tool === 'lasso') {
+        // Drag-move finalize
+        if (lassoDragRef.current) {
+          const { dx, dy } = lassoDragRef.current;
+          lassoDragRef.current = null;
+          setIsDragging(false);
+          const sel = selectedIndicesRef.current;
+          if (dx !== 0 || dy !== 0) {
+            useDrawingStore.getState().translateStrokes(page, sel, dx, dy);
+            setActionBarPos((prev) =>
+              prev ? { x: prev.x + dx, y: prev.y + dy } : null,
+            );
+          } else if (persistentRef.current) {
+            // No movement: restore persistent (it was rendered without selected at drag start)
+            const cur = useDrawingStore.getState().strokesByPage[page] ?? EMPTY;
+            renderAllStrokes(persistentRef.current, cur);
+          }
+          // Re-render selection overlay at the (possibly new) positions
+          const after = useDrawingStore.getState().strokesByPage[page] ?? EMPTY;
+          drawSelectionOverlay(after, sel);
+          return;
+        }
         const polygon = liveStroke.points;
         if (polygon.length < 3) {
           clearCanvas(live);
@@ -565,7 +697,7 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
         className="absolute inset-0 select-none"
         style={{ touchAction: 'none' }}
       />
-      {actionBarPos && selectedIndices.length > 0 && (
+      {!isDragging && actionBarPos && selectedIndices.length > 0 && (
         <div
           className="absolute z-30 bg-white rounded-lg shadow-lg border border-gray-200 flex gap-1 p-1"
           style={{
