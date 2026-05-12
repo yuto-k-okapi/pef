@@ -15,8 +15,15 @@ interface DrawingState {
    * (remove/undo/page/PDF change). Pen-add does NOT bump this. */
   redrawCounter: number;
 
+  /** Pinch zoom and pan state (relative to the unscaled PDF). */
+  zoom: number;
+  panX: number;
+  panY: number;
+
   setTool: (tool: Tool) => void;
   setColor: (color: ColorKey) => void;
+  setView: (view: { zoom: number; panX: number; panY: number }) => void;
+  resetView: () => void;
 
   hydrateFromIdb: (
     pdfId: string,
@@ -52,9 +59,14 @@ export const useDrawingStore = create<DrawingState>((set) => ({
   strokesByPage: {},
   undoStackByPage: {},
   redrawCounter: 0,
+  zoom: 1,
+  panX: 0,
+  panY: 0,
 
   setTool: (tool) => set({ tool }),
   setColor: (color) => set({ color, tool: 'pen' }),
+  setView: ({ zoom, panX, panY }) => set({ zoom, panX, panY }),
+  resetView: () => set({ zoom: 1, panX: 0, panY: 0 }),
 
   hydrateFromIdb: (pdfId, strokesByPage) =>
     set((s) => ({
@@ -62,6 +74,9 @@ export const useDrawingStore = create<DrawingState>((set) => ({
       strokesByPage,
       undoStackByPage: {},
       redrawCounter: s.redrawCounter + 1,
+      zoom: 1,
+      panX: 0,
+      panY: 0,
     })),
 
   clearActive: () =>
@@ -70,6 +85,9 @@ export const useDrawingStore = create<DrawingState>((set) => ({
       strokesByPage: {},
       undoStackByPage: {},
       redrawCounter: s.redrawCounter + 1,
+      zoom: 1,
+      panX: 0,
+      panY: 0,
     })),
 
   addStroke: (page, stroke) =>

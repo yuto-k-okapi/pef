@@ -40,18 +40,22 @@ export function DiagnosticsPanel() {
     <>
       <button
         onClick={() => setOpen((v) => !v)}
-        className={`fixed top-2 right-2 z-50 px-2.5 py-1 text-xs rounded shadow ${
+        className={`fixed right-2 z-50 px-2.5 py-1 text-xs rounded shadow ${
           errorCount > 0
             ? 'bg-red-600 text-white'
             : warnCount > 0
               ? 'bg-amber-500 text-white'
               : 'bg-gray-700 text-white'
         }`}
+        style={{ top: 'max(env(safe-area-inset-top), 0.5rem)' }}
       >
         log {total > 0 ? `(${total})` : ''}
       </button>
       {open && (
-        <div className="fixed inset-x-2 top-12 bottom-2 bg-white border border-gray-300 shadow-xl rounded-lg z-50 flex flex-col">
+        <div
+          className="fixed inset-x-2 bottom-2 bg-white border border-gray-300 shadow-xl rounded-lg z-50 flex flex-col"
+          style={{ top: 'calc(max(env(safe-area-inset-top), 0.5rem) + 2.5rem)' }}
+        >
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-200">
             <span className="text-sm font-medium">
               診断ログ ({logs.length})

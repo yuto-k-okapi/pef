@@ -44,12 +44,21 @@ function findTouchById(list: TouchList, id: number): IOSTouch | null {
   return null;
 }
 
+interface PinchState {
+  initialDist: number;
+  initialMid: { x: number; y: number };
+  initialZoom: number;
+  initialPan: { x: number; y: number };
+}
+
 export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
   const persistentRef = useRef<HTMLCanvasElement>(null);
   const liveRef = useRef<HTMLCanvasElement>(null);
   const liveStrokeRef = useRef<Stroke | null>(null);
   const sourceRef = useRef<SourceTag>(null);
   const activeTouchIdRef = useRef<number | null>(null);
+  const fingersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const pinchRef = useRef<PinchState | null>(null);
   const redrawCounter = useDrawingStore((s) => s.redrawCounter);
 
   // Resize both canvases when dimensions change, applying DPR transform
@@ -201,9 +210,11 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
     // ---- Pointer Events (mouse + most pens, hover support) ----
     const pointerToPoint = (e: PointerEvent): Point => {
       const rect = live.getBoundingClientRect();
+      // rect is the visually-scaled rect; divide by zoom to get unscaled canvas coords
+      const zoom = useDrawingStore.getState().zoom;
       return {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top,
+        x: (e.clientX - rect.left) / zoom,
+        y: (e.clientY - rect.top) / zoom,
         pressure: e.pressure > 0 ? e.pressure : 0.5,
       };
     };
@@ -251,43 +262,114 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       }
     };
 
-    // ---- Touch Events (iPad Apple Pencil reliable backup) ----
+    // ---- Touch Events (iPad Apple Pencil + 2-finger pinch/pan) ----
     const touchToPoint = (t: IOSTouch): Point => {
       const rect = live.getBoundingClientRect();
+      const zoom = useDrawingStore.getState().zoom;
       return {
-        x: t.clientX - rect.left,
-        y: t.clientY - rect.top,
+        x: (t.clientX - rect.left) / zoom,
+        y: (t.clientY - rect.top) / zoom,
         pressure: t.force > 0 ? t.force : 0.5,
       };
     };
 
+    const trackFingers = (e: TouchEvent) => {
+      // Update positions of all currently-active non-stylus touches
+      fingersRef.current.clear();
+      for (let i = 0; i < e.touches.length; i++) {
+        const t = e.touches[i] as IOSTouch;
+        if (t.touchType === 'stylus') continue;
+        fingersRef.current.set(t.identifier, { x: t.clientX, y: t.clientY });
+      }
+    };
+
+    const beginPinch = () => {
+      if (fingersRef.current.size < 2) return;
+      const [a, b] = Array.from(fingersRef.current.values());
+      const { zoom, panX, panY } = useDrawingStore.getState();
+      pinchRef.current = {
+        initialDist: Math.hypot(a.x - b.x, a.y - b.y) || 1,
+        initialMid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+        initialZoom: zoom,
+        initialPan: { x: panX, y: panY },
+      };
+    };
+
+    const updatePinch = () => {
+      const p = pinchRef.current;
+      if (!p || fingersRef.current.size < 2) return;
+      const [a, b] = Array.from(fingersRef.current.values());
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const factor = dist / p.initialDist;
+      const newZoom = Math.max(0.5, Math.min(5, p.initialZoom * factor));
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const dx = mid.x - p.initialMid.x;
+      const dy = mid.y - p.initialMid.y;
+      useDrawingStore.getState().setView({
+        zoom: newZoom,
+        panX: p.initialPan.x + dx,
+        panY: p.initialPan.y + dy,
+      });
+    };
+
     const onTouchStart = (e: TouchEvent) => {
       const stylus = findStylus(e.changedTouches);
-      if (!stylus) return;
-      e.preventDefault();
-      if (liveStrokeRef.current) return; // pointer already started
-      activeTouchIdRef.current = stylus.identifier;
-      beginStroke(touchToPoint(stylus), 'touch');
+      if (stylus) {
+        e.preventDefault();
+        if (liveStrokeRef.current) return; // pointer already started
+        activeTouchIdRef.current = stylus.identifier;
+        beginStroke(touchToPoint(stylus), 'touch');
+        return;
+      }
+      // Non-stylus touches: track for pinch/pan
+      trackFingers(e);
+      if (fingersRef.current.size >= 2 && !liveStrokeRef.current) {
+        e.preventDefault();
+        beginPinch();
+      }
     };
 
     const onTouchMove = (e: TouchEvent) => {
-      if (sourceRef.current !== 'touch') return;
-      const id = activeTouchIdRef.current;
-      if (id === null) return;
-      const t = findTouchById(e.changedTouches, id);
-      if (!t) return;
-      e.preventDefault();
-      continueStroke(touchToPoint(t));
+      if (sourceRef.current === 'touch') {
+        const id = activeTouchIdRef.current;
+        if (id === null) return;
+        const t = findTouchById(e.changedTouches, id);
+        if (!t) return;
+        e.preventDefault();
+        continueStroke(touchToPoint(t));
+        return;
+      }
+      if (pinchRef.current && fingersRef.current.size >= 2) {
+        // Update tracked finger positions
+        for (let i = 0; i < e.touches.length; i++) {
+          const t = e.touches[i] as IOSTouch;
+          if (t.touchType === 'stylus') continue;
+          if (fingersRef.current.has(t.identifier)) {
+            fingersRef.current.set(t.identifier, { x: t.clientX, y: t.clientY });
+          }
+        }
+        e.preventDefault();
+        updatePinch();
+      }
     };
 
     const onTouchEnd = (e: TouchEvent) => {
-      if (sourceRef.current !== 'touch') return;
-      const id = activeTouchIdRef.current;
-      if (id === null) return;
-      const t = findTouchById(e.changedTouches, id);
-      if (!t) return;
-      e.preventDefault();
-      finalizeStroke();
+      if (sourceRef.current === 'touch') {
+        const id = activeTouchIdRef.current;
+        if (id === null) return;
+        const t = findTouchById(e.changedTouches, id);
+        if (!t) return;
+        e.preventDefault();
+        finalizeStroke();
+        return;
+      }
+      // Remove ended fingers from tracking
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        fingersRef.current.delete(e.changedTouches[i].identifier);
+      }
+      if (fingersRef.current.size < 2) {
+        pinchRef.current = null;
+      }
     };
 
     // ---- attach ----

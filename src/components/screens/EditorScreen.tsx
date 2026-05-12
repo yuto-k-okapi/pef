@@ -38,6 +38,10 @@ export function EditorScreen({ pdfId, onBack }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const pdfBytesRef = useRef<ArrayBuffer | null>(null);
   const cssWidthByPageRef = useRef<Record<number, number>>({});
+  const zoom = useDrawingStore((s) => s.zoom);
+  const panX = useDrawingStore((s) => s.panX);
+  const panY = useDrawingStore((s) => s.panY);
+  const resetView = useDrawingStore((s) => s.resetView);
 
   // Hydrate from idb on mount / when pdfId changes
   useEffect(() => {
@@ -187,6 +191,15 @@ export function EditorScreen({ pdfId, onBack }: Props) {
         >
           次
         </button>
+        {zoom !== 1 && (
+          <button
+            onClick={resetView}
+            className="px-2 py-1 rounded bg-gray-100 text-xs"
+            aria-label="reset zoom"
+          >
+            {zoom.toFixed(1)}× ↺
+          </button>
+        )}
         <button
           onClick={handleExport}
           disabled={exporting}
@@ -200,7 +213,15 @@ export function EditorScreen({ pdfId, onBack }: Props) {
           ref={containerRef}
           className="flex-1 relative overflow-hidden flex items-center justify-center p-4"
         >
-          <div className="relative" style={{ touchAction: 'none' }}>
+          <div
+            className="relative"
+            style={{
+              touchAction: 'none',
+              transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+              transformOrigin: '50% 50%',
+              willChange: 'transform',
+            }}
+          >
             <canvas
               ref={pdfCanvasRef}
               className="block bg-white shadow-md pointer-events-none select-none"

@@ -1,11 +1,10 @@
 import type { Point, Stroke } from '../types/drawing';
 
-const MIN_WIDTH = 1.6;
-const MAX_WIDTH = 4.4;
+const PEN_WIDTH = 2.4;
 
-export function widthFromPressure(pressure: number): number {
-  const p = Math.max(0, Math.min(1, pressure));
-  return MIN_WIDTH + (MAX_WIDTH - MIN_WIDTH) * p;
+export function widthFromPressure(_pressure: number): number {
+  // Fixed pen width — pressure-sensitivity disabled by user preference.
+  return PEN_WIDTH;
 }
 
 function midpoint(a: Point, b: Point): { x: number; y: number } {
