@@ -231,7 +231,7 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
                 label="反転回数"
                 value={s.scribbleMinReversals}
                 min={4}
-                max={20}
+                max={60}
                 step={1}
                 onChange={(v) => s.update({ scribbleMinReversals: v })}
               />
@@ -239,12 +239,12 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
                 label="圧縮率"
                 value={s.scribbleMinCompactness}
                 min={2.0}
-                max={5.0}
+                max={15.0}
                 step={0.1}
                 onChange={(v) => s.update({ scribbleMinCompactness: v })}
               />
               <p className="text-xs text-gray-400 mt-1">
-                目安: 厳しく=反転12/圧縮3.5、標準=8/3.0、ゆるい=5/2.5。右のプレビューで実際の判定値を確認できます。
+                値を大きくするほど起動しにくくなります。右のプレビューで実際の判定値を確認できます。
               </p>
             </>
           )}

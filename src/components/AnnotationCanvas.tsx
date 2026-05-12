@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useDrawingStore } from '../store/useDrawingStore';
 import {
   ERASER_SIZE_PX,
@@ -18,6 +18,7 @@ import {
   pointNearStroke,
   renderAllStrokes,
   renderStroke,
+  strokeIntersectsPolygon,
   strokesIntersect,
 } from '../lib/strokeRenderer';
 import { analyzeStroke } from '../lib/scribbleDetector';
@@ -68,6 +69,12 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
   const fingersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   const pinchRef = useRef<PinchState | null>(null);
   const redrawCounter = useDrawingStore((s) => s.redrawCounter);
+  const tool = useDrawingStore((s) => s.tool);
+  const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
+  const [actionBarPos, setActionBarPos] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   // Resize both canvases when dimensions change, applying DPR transform
   useEffect(() => {
@@ -98,6 +105,29 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       renderAllStrokes(persistentRef.current, cur);
     }
   }, [redrawCounter, page]);
+
+  // Clear any lasso selection when the user switches away from the lasso tool
+  // or navigates to a different page.
+  useEffect(() => {
+    if (tool === 'lasso') return;
+    if (selectedIndices.length === 0 && actionBarPos === null) return;
+    setSelectedIndices([]);
+    setActionBarPos(null);
+    if (liveRef.current) clearCanvas(liveRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool, page]);
+
+  function clearLassoSelection() {
+    setSelectedIndices([]);
+    setActionBarPos(null);
+    if (liveRef.current) clearCanvas(liveRef.current);
+  }
+
+  function deleteLassoSelection() {
+    if (selectedIndices.length === 0) return;
+    useDrawingStore.getState().removeStrokes(page, selectedIndices);
+    clearLassoSelection();
+  }
 
   // Drawing event listeners (Pointer + Touch). Touch events are used as a
   // backup for iPadOS where pointer events for the 2nd Apple Pencil stroke
@@ -151,10 +181,58 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       }
     };
 
+    const drawLassoPath = (pts: Point[]) => {
+      clearCanvas(live);
+      if (pts.length < 2) return;
+      const ctx = live.getContext('2d');
+      if (!ctx) return;
+      ctx.save();
+      ctx.strokeStyle = '#3b82f6';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+      ctx.restore();
+    };
+
+    const drawSelectionOverlay = (
+      strokes: Stroke[],
+      indices: number[],
+    ) => {
+      clearCanvas(live);
+      if (indices.length === 0) return;
+      const ctx = live.getContext('2d');
+      if (!ctx) return;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(59, 130, 246, 0.42)';
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (const idx of indices) {
+        const s = strokes[idx];
+        if (!s || s.points.length === 0) continue;
+        ctx.lineWidth = (s.width ?? 2.4) + 8;
+        ctx.beginPath();
+        ctx.moveTo(s.points[0].x, s.points[0].y);
+        for (let i = 1; i < s.points.length; i++)
+          ctx.lineTo(s.points[i].x, s.points[i].y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    };
+
     const beginStroke = (pt: Point, source: SourceTag) => {
       const { tool, color, width } = useDrawingStore.getState();
       const settings = useSettingsStore.getState();
       sourceRef.current = source;
+      if (tool === 'lasso') {
+        liveStrokeRef.current = { points: [pt], color: '__lasso__' };
+        setSelectedIndices([]);
+        setActionBarPos(null);
+        drawLassoPath([pt]);
+        return;
+      }
       if (tool === 'eraser') {
         liveStrokeRef.current = {
           points: [pt],
@@ -181,6 +259,10 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       if (!liveStroke) return;
       liveStroke.points.push(pt);
       const tool = useDrawingStore.getState().tool;
+      if (tool === 'lasso') {
+        drawLassoPath(liveStroke.points);
+        return;
+      }
       if (tool === 'eraser') {
         eraseAt(pt);
         drawEraserCursor(pt);
@@ -197,6 +279,40 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       if (!liveStroke) return;
 
       const tool = useDrawingStore.getState().tool;
+      if (tool === 'lasso') {
+        const polygon = liveStroke.points;
+        if (polygon.length < 3) {
+          clearCanvas(live);
+          return;
+        }
+        const cur = useDrawingStore.getState().strokesByPage[page] ?? EMPTY;
+        const indices: number[] = [];
+        for (let i = 0; i < cur.length; i++) {
+          if (strokeIntersectsPolygon(cur[i], polygon)) indices.push(i);
+        }
+        if (indices.length === 0) {
+          // Empty selection — wipe lasso outline
+          clearCanvas(live);
+          setSelectedIndices([]);
+          setActionBarPos(null);
+          return;
+        }
+        // Action bar anchor: top center of selection bbox
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        for (const idx of indices) {
+          for (const p of cur[idx].points) {
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+          }
+        }
+        setSelectedIndices(indices);
+        setActionBarPos({ x: (minX + maxX) / 2, y: minY });
+        drawSelectionOverlay(cur, indices);
+        return;
+      }
       if (tool === 'eraser') {
         clearCanvas(live);
         return;
@@ -449,6 +565,29 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
         className="absolute inset-0 select-none"
         style={{ touchAction: 'none' }}
       />
+      {actionBarPos && selectedIndices.length > 0 && (
+        <div
+          className="absolute z-30 bg-white rounded-lg shadow-lg border border-gray-200 flex gap-1 p-1"
+          style={{
+            left: `${actionBarPos.x}px`,
+            top: `${Math.max(actionBarPos.y - 44, 8)}px`,
+            transform: 'translateX(-50%)',
+          }}
+        >
+          <button
+            onClick={deleteLassoSelection}
+            className="px-3 py-1.5 rounded bg-red-50 text-red-700 text-sm font-medium whitespace-nowrap"
+          >
+            削除 ({selectedIndices.length})
+          </button>
+          <button
+            onClick={clearLassoSelection}
+            className="px-3 py-1.5 rounded bg-gray-100 text-sm whitespace-nowrap"
+          >
+            選択解除
+          </button>
+        </div>
+      )}
     </>
   );
 }

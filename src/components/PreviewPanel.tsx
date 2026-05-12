@@ -120,6 +120,7 @@ export function PreviewPanel() {
         liveStrokeRef.current = { points: [pt], color: '__eraser__' };
         return;
       }
+      if (tool === 'lasso') return; // lasso not supported in preview
       const color = COLORS[settings.paletteColors[colorIdx]];
       liveStrokeRef.current = {
         points: [pt],

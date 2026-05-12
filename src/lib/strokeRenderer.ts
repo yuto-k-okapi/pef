@@ -221,3 +221,34 @@ export function pointNearStroke(
   }
   return false;
 }
+
+export function pointInPolygon(
+  px: number,
+  py: number,
+  polygon: Point[],
+): boolean {
+  let inside = false;
+  const n = polygon.length;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = polygon[i].x;
+    const yi = polygon[i].y;
+    const xj = polygon[j].x;
+    const yj = polygon[j].y;
+    const intersect =
+      yi > py !== yj > py &&
+      px < ((xj - xi) * (py - yi)) / (yj - yi + 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+export function strokeIntersectsPolygon(
+  stroke: Stroke,
+  polygon: Point[],
+): boolean {
+  if (polygon.length < 3) return false;
+  for (const p of stroke.points) {
+    if (pointInPolygon(p.x, p.y, polygon)) return true;
+  }
+  return false;
+}

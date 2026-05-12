@@ -17,7 +17,7 @@ export interface Stroke {
   alpha?: number;
 }
 
-export type Tool = 'pen' | 'pencil' | 'eraser';
+export type Tool = 'pen' | 'pencil' | 'eraser' | 'lasso';
 export type ColorKey =
   | 'red'
   | 'pink'

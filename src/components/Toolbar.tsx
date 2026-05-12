@@ -9,6 +9,23 @@ import {
 } from '../store/useSettingsStore';
 import { COLORS, WIDTH_ORDER } from '../types/drawing';
 
+function LassoIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="22"
+      height="22"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeDasharray="3 2"
+      strokeLinecap="round"
+    >
+      <ellipse cx="12" cy="12" rx="9" ry="7" />
+    </svg>
+  );
+}
+
 function EraserIcon({ size = 22 }: { size?: number }) {
   return (
     <span
@@ -167,6 +184,17 @@ export function Toolbar({ page }: { page: number }) {
             </button>
           );
         })}
+
+      <button
+        onClick={() => setTool('lasso')}
+        aria-label="lasso"
+        title="投げ縄選択"
+        className={`w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-gray-700 ${
+          tool === 'lasso' ? 'ring-2 ring-blue-500' : ''
+        }`}
+      >
+        <LassoIcon />
+      </button>
 
       <button
         onClick={() => undo(page)}
