@@ -10,26 +10,38 @@ export interface ScribbleThresholds {
   minReversals: number;
 }
 
-// Fixed lower bounds — not user-tunable to keep the UI focused on the two
-// values that actually shape the heuristic.
 const SCRIBBLE_FIXED = {
   minPoints: 8,
   minPathLength: 80,
   minBboxDiagonal: 25,
 };
 
+export type EraserSize = 'small' | 'med' | 'large';
+export const ERASER_SIZE_PX: Record<EraserSize, number> = {
+  small: 4,
+  med: 8,
+  large: 14,
+};
+export const ERASER_SIZE_ORDER: EraserSize[] = ['small', 'med', 'large'];
+
+export type PencilDarkness = 'light' | 'med' | 'dark';
+export const PENCIL_ALPHA_VALUE: Record<PencilDarkness, number> = {
+  light: 0.3,
+  med: 0.55,
+  dark: 0.85,
+};
+export const PENCIL_DARKNESS_ORDER: PencilDarkness[] = ['light', 'med', 'dark'];
+
 export interface Settings {
-  // Pen widths (the 3 slots shown in the palette)
+  // Pen widths (3 slots shown in the palette)
   widthThin: number;
   widthMed: number;
   widthThick: number;
   // The 4 color slots shown in the palette
   paletteColors: ColorKey[];
-  // Pencil
-  pencilAlpha: number;
-  pencilEnabled: boolean;
-  // Eraser
-  eraserRadius: number;
+  // Selected presets from the toolbar (persisted across sessions)
+  eraserSize: EraserSize;
+  pencilDarkness: PencilDarkness;
   // Scribble auto-erase
   scribbleEnabled: boolean;
   scribbleMinReversals: number;
@@ -41,9 +53,8 @@ export const DEFAULT_SETTINGS: Settings = {
   widthMed: 2.4,
   widthThick: 4.2,
   paletteColors: [...DEFAULT_PALETTE],
-  pencilAlpha: 0.55,
-  pencilEnabled: true,
-  eraserRadius: 5,
+  eraserSize: 'med',
+  pencilDarkness: 'med',
   scribbleEnabled: true,
   scribbleMinReversals: 12,
   scribbleMinCompactness: 3.5,
@@ -87,9 +98,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
         widthMed: next.widthMed,
         widthThick: next.widthThick,
         paletteColors: next.paletteColors,
-        pencilAlpha: next.pencilAlpha,
-        pencilEnabled: next.pencilEnabled,
-        eraserRadius: next.eraserRadius,
+        eraserSize: next.eraserSize,
+        pencilDarkness: next.pencilDarkness,
         scribbleEnabled: next.scribbleEnabled,
         scribbleMinReversals: next.scribbleMinReversals,
         scribbleMinCompactness: next.scribbleMinCompactness,

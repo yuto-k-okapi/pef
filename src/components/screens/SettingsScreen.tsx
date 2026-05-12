@@ -6,6 +6,7 @@ import {
   COLORS,
 } from '../../types/drawing';
 import type { ColorKey } from '../../types/drawing';
+import { ScribblePreview } from '../ScribblePreview';
 
 interface Props {
   onBack: () => void;
@@ -96,7 +97,9 @@ function PaletteEditor({
               onClick={() => setEditingSlot(active ? null : idx)}
               aria-label={`slot ${idx + 1}`}
               className={`w-12 h-12 rounded-full transition-transform ${
-                active ? 'scale-110 ring-2 ring-offset-2 ring-blue-500' : 'ring-1 ring-gray-200'
+                active
+                  ? 'scale-110 ring-2 ring-offset-2 ring-blue-500'
+                  : 'ring-1 ring-gray-200'
               }`}
               style={{ backgroundColor: COLORS[c] }}
             />
@@ -142,7 +145,10 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
   const swatch = (px: number) => (
     <span
       className="block bg-gray-700 rounded-full shrink-0"
-      style={{ width: `${Math.max(4, px * 2.4)}px`, height: `${Math.max(4, px * 2.4)}px` }}
+      style={{
+        width: `${Math.max(4, px * 2.4)}px`,
+        height: `${Math.max(4, px * 2.4)}px`,
+      }}
     />
   );
 
@@ -170,41 +176,6 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
             colors={s.paletteColors}
             onChange={(next) => s.update({ paletteColors: next })}
           />
-        </Section>
-
-        <Section title="ペン種">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3 py-1">
-              <span className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-lg">
-                ✒︎
-              </span>
-              <div className="flex-1">
-                <div className="text-sm font-medium">ペン</div>
-                <div className="text-xs text-gray-500">
-                  常時有効（無効化不可）
-                </div>
-              </div>
-            </div>
-            <label className="flex items-center gap-3 py-1 cursor-pointer">
-              <span className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center text-lg">
-                ✏︎
-              </span>
-              <div className="flex-1">
-                <div className="text-sm font-medium">鉛筆</div>
-                <div className="text-xs text-gray-500">
-                  ツールバーに表示する
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={s.pencilEnabled}
-                onChange={(e) =>
-                  s.update({ pencilEnabled: e.target.checked })
-                }
-                className="w-5 h-5"
-              />
-            </label>
-          </div>
         </Section>
 
         <Section title="ペンの太さ（パレットの3種類）">
@@ -240,32 +211,9 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
           />
         </Section>
 
-        <Section title="消しゴム">
-          <NumberSlider
-            label="半径"
-            value={s.eraserRadius}
-            min={3}
-            max={15}
-            step={1}
-            unit="px"
-            onChange={(v) => s.update({ eraserRadius: v })}
-          />
-        </Section>
-
-        <Section title="鉛筆">
-          <NumberSlider
-            label="濃さ"
-            value={s.pencilAlpha}
-            min={0.2}
-            max={1}
-            step={0.05}
-            onChange={(v) => s.update({ pencilAlpha: v })}
-          />
-        </Section>
-
         <Section
           title="ぐちゃぐちゃ消し"
-          hint="ペンを大きく往復させたらそのエリアの添削を自動消去します。数値が大きいほど起動しにくくなります。"
+          hint="ペンで往復させたエリアの添削を自動消去します。下のプレビューで実際の判定値を確認できます。"
         >
           <label className="flex items-center gap-3 py-1 mb-2 cursor-pointer">
             <input
@@ -294,9 +242,10 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
                 step={0.1}
                 onChange={(v) => s.update({ scribbleMinCompactness: v })}
               />
-              <p className="text-xs text-gray-400 mt-2">
+              <p className="text-xs text-gray-400 mt-1 mb-3">
                 目安: 厳しく=反転12/圧縮3.5、標準=8/3.0、ゆるい=5/2.5
               </p>
+              <ScribblePreview />
             </>
           )}
         </Section>
@@ -360,11 +309,13 @@ export function SettingsScreen({ onBack, onClearAllPdfs }: Props) {
 
         <Section title="使い方">
           <ul className="text-sm text-gray-700 space-y-2 list-disc pl-5">
-            <li>PDFを取り込んだら、ツールバーでペン・鉛筆・消しゴムを切替</li>
+            <li>
+              ツールバー: ペン/鉛筆を選ぶと太さや濃さの選択肢が変わります
+            </li>
+            <li>消しゴム選択中はサイズ（小/中/大）が選べます</li>
             <li>2本指でピンチイン/アウト、2本指ドラッグでパン</li>
             <li>「+ メモ」で現在のページの直後に空白ページを挿入</li>
             <li>「書き出し」で添削済みPDFを共有/ダウンロード</li>
-            <li>進捗タグ（未/中/完）で添削状況を管理</li>
           </ul>
         </Section>
       </div>

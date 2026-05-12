@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useDrawingStore } from '../store/useDrawingStore';
 import {
+  ERASER_SIZE_PX,
+  PENCIL_ALPHA_VALUE,
   scribbleThresholdsFrom,
   useSettingsStore,
   widthValue,
@@ -107,7 +109,7 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
 
     // ---- shared helpers ----
     const eraseAt = (pt: Point) => {
-      const r = useSettingsStore.getState().eraserRadius;
+      const r = ERASER_SIZE_PX[useSettingsStore.getState().eraserSize];
       const cur = useDrawingStore.getState().strokesByPage[page] ?? EMPTY;
       const indices: number[] = [];
       for (let i = 0; i < cur.length; i++) {
@@ -122,7 +124,7 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
       clearCanvas(live);
       const ctx = live.getContext('2d');
       if (!ctx) return;
-      const r = useSettingsStore.getState().eraserRadius;
+      const r = ERASER_SIZE_PX[useSettingsStore.getState().eraserSize];
       ctx.fillStyle = 'rgba(255,255,255,0.55)';
       ctx.strokeStyle = 'rgba(0,0,0,0.55)';
       ctx.lineWidth = 1;
@@ -166,7 +168,10 @@ export function AnnotationCanvas({ page, cssWidth, cssHeight }: Props) {
           color: COLORS[color],
           kind: tool, // 'pen' or 'pencil'
           width: widthValue(width, settings),
-          alpha: tool === 'pencil' ? settings.pencilAlpha : 1,
+          alpha:
+            tool === 'pencil'
+              ? PENCIL_ALPHA_VALUE[settings.pencilDarkness]
+              : 1,
         };
       }
     };
